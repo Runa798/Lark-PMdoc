@@ -1,0 +1,30 @@
+%% 时序图模板 — 多角色交互 + par 并行 + Note 标注
+%% 用法：把 <!-- TODO --> 处替换为你的内容
+%% 渲染：mmdc -i this.mmd -o out.png -p puppeteer-config.json -c mermaid-config.json -w 1600 -b white
+
+sequenceDiagram
+    autonumber
+    participant U as 用户/前端
+    participant API as 后端服务
+    participant LLM as LLM 生成
+
+    %% 第一段：触发事件 + 后台异步
+    U->>U: 浏览/进入场景
+    U->>API: 触发数据预取
+    Note over API: 零 LLM 成本<br/>仅 DB 查询
+    API-->>U: 数据就绪（无感知）
+
+    %% 第二段：用户主动行为 → 并行处理
+    Note over U: T0 用户点击「关键动作」
+    par 视频/资源加载与 LLM 生成并行
+        U->>U: 资源加载<br/>(CDN ~2-5s)
+    and
+        U->>LLM: 触发生成（数据已就绪）
+        LLM-->>U: 返回文本（~1.5-3s）
+    end
+
+    %% 第三段：合流 + 展示
+    Note over U: T+~3s 资源就绪 & LLM 完成
+    U->>U: 卡片浮层展示
+    Note right of U: 若 LLM 未返回：<br/>shimmer 骨架屏兜底<br/>+ 打字机流式填入
+    U->>U: 保留 N 秒后自动淡出

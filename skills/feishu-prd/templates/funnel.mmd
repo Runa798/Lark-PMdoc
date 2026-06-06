@@ -1,0 +1,42 @@
+%% 漏斗模板 — 3 区段 subgraph + 段间转化率 + 段内子转化
+%% 用法：把 <!-- TODO --> 处替换为你的内容
+%% 渲染：mmdc -i this.mmd -o out.png -p puppeteer-config.json -c mermaid-config.json -w 1600 -b white
+%%
+%% 结构：3 个 subgraph 分别对应"卖得动 / 讲得好 / 记得住"
+%%       段内用 --> 普通箭头标段间转化率
+%%       跨段用 ==> 加粗箭头标关键节点转化
+
+flowchart TD
+    subgraph A["A. 卖得动（首入口 → 决心）"]
+        direction TB
+        S1["1 · 入口曝光<br/><b>累计 100%</b>"] -->|"× 45% 段间"| S2
+        S2["2 · 点击进入<br/><b>累计 45%</b><br/>目标 ≥40% · 警戒 &lt;25%"] -->|"× 90%"| S3
+        S3["3 · Onboarding 完成<br/><b>累计 40.5%</b><br/>目标 ≥85% · MVP 强制"]
+    end
+
+    subgraph B["B. 讲得好（首次价值传递）"]
+        direction TB
+        S4["4 · 首次价值触达<br/><b>累计 38.5%</b><br/>目标 ≥90% · 技术触达"] -->|"× 72%"| S5
+        S5["5 · 业务转化<br/><b>累计 27.7%</b><br/>目标 ≥70%"] -->|"× 65%"| S6
+        S6["6 · 深度消费<br/><b>累计 18.0%</b><br/>目标 ≥60%"]
+    end
+
+    subgraph C["C. 记得住（长期价值沉淀）"]
+        direction TB
+        S7["7 · D1 回访<br/><b>累计 8.1%</b><br/>目标 ≥40%"] -->|"× 55%"| S8
+        S8["8 · D7 留存<br/><b>累计 4.5%</b><br/>目标 ≥50%"] -->|"× 55%"| S9
+        S9["9 · D30 留存<br/><b>累计 2.5%</b><br/>目标 T &gt; Control ≥5pp"]
+    end
+
+    %% 跨段加粗
+    S3 ==>|"× 95% 段间"| S4
+    S6 ==>|"× 45% 段间"| S7
+
+    %% 区段配色（3 色对应 A/B/C）
+    classDef sectionA fill:#EFF6FF,stroke:#1E40AF,color:#1E3A8A
+    classDef sectionB fill:#F5F3FF,stroke:#6D28D9,color:#5B21B6
+    classDef sectionC fill:#FEF2F2,stroke:#B91C1C,color:#991B1B
+
+    class S1,S2,S3 sectionA
+    class S4,S5,S6 sectionB
+    class S7,S8,S9 sectionC

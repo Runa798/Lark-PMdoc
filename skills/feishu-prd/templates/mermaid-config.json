@@ -1,0 +1,17 @@
+{
+  "theme": "neutral",
+  "themeVariables": {
+    "fontFamily": "\"Noto Sans CJK SC\", \"Noto Sans\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+    "fontSize": "15px"
+  },
+  "flowchart": {
+    "useMaxWidth": false,
+    "curve": "basis"
+  },
+  "sequence": {
+    "useMaxWidth": false,
+    "actorFontFamily": "\"Noto Sans CJK SC\", sans-serif",
+    "noteFontFamily": "\"Noto Sans CJK SC\", sans-serif",
+    "messageFontFamily": "\"Noto Sans CJK SC\", sans-serif"
+  }
+}

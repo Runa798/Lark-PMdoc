@@ -1,0 +1,156 @@
+{
+  "_comment": "Fill-in PRD skeleton — a delivery manifest matching delivery/src/lib/manifest.ts (PrdManifest). Section titles carry NO numbers; the engine numbers them deterministically (一/二/三 for H1, global 1./2./3. for H2). Replace every （…）placeholder. Image/mermaid paths are workspace-relative placeholders you must point at real files (or drop the block). columnWidths length must equal the table header length. callout backgroundColor=1-14, borderColor=1-7, emoji is an emoji_id shortcode (e.g. pushpin), not a unicode char. grid widthRatios must be two positive numbers summing to 100.",
+  "title": "（产品名）需求文档 — （需求/迭代名）",
+  "sections": [
+    {
+      "level": 1,
+      "title": "文档信息",
+      "anchorKey": "doc-info",
+      "blocks": [
+        {
+          "kind": "table",
+          "table": {
+            "header": ["字段", "内容"],
+            "rows": [
+              ["文档名称", "（同标题）"],
+              ["版本", "v0.1.0"],
+              ["作者", "（姓名）"],
+              ["状态", "草稿 / 评审中 / 已定稿"],
+              ["更新时间", "（YYYY-MM-DD）"]
+            ],
+            "columnWidths": [120, 400]
+          }
+        }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "需求背景",
+      "anchorKey": "background",
+      "blocks": [
+        { "kind": "paragraph", "text": "（说明：要解决的问题、业务/用户背景、为什么现在做。一两段，给出决策依据，不要只罗列功能。）" },
+        { "kind": "paragraph", "text": "（目标：本次需求达成后期望的结果，能度量更好。）" }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "需求清单",
+      "anchorKey": "requirement-list",
+      "blocks": [
+        { "kind": "paragraph", "text": "（本次迭代的需求一览，按优先级排序，便于评审快速对齐范围。）" },
+        {
+          "kind": "table",
+          "table": {
+            "header": ["需求名称", "描述", "所属模块", "优先级"],
+            "rows": [
+              ["（需求 1）", "（一句话描述）", "（模块）", "P0"],
+              ["（需求 2）", "（一句话描述）", "（模块）", "P1"],
+              ["（需求 3）", "（一句话描述）", "（模块）", "P2"]
+            ],
+            "columnWidths": [140, 320, 120, 80]
+          }
+        }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "全局需求与规则说明",
+      "anchorKey": "global-rules",
+      "blocks": [
+        { "kind": "paragraph", "text": "（贯穿多个需求的通用规则：权限、状态机、计费、时区、文案规范等。）" },
+        {
+          "kind": "callout",
+          "callout": {
+            "emoji": "pushpin",
+            "lines": [
+              "（重点规则放进 callout 高亮，例如：所有时间均按 Asia/Shanghai 展示与存储。）"
+            ],
+            "backgroundColor": 1,
+            "borderColor": 1
+          }
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "title": "业务规则",
+      "anchorKey": "global-rules-business",
+      "blocks": [
+        {
+          "kind": "list",
+          "list": {
+            "style": "unordered",
+            "items": [
+              "（规则写成 if-then 句：当 X 时，系统 Y；否则 Z。）",
+              "（含公式的规则给出代入算例，不要只写公式。）",
+              "（异常 / 边界 / 并发 / 重复提交都要穷举到。）"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "level": 2,
+      "title": "后台配置",
+      "anchorKey": "global-rules-config",
+      "blocks": [
+        {
+          "kind": "table",
+          "table": {
+            "header": ["字段", "类型", "默认值", "说明"],
+            "rows": [
+              ["field_name", "（类型）", "（默认）", "（中文释义 + 取值范围）"]
+            ],
+            "columnWidths": [160, 100, 100, 320]
+          }
+        }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "交互说明",
+      "anchorKey": "interaction",
+      "blocks": [
+        { "kind": "paragraph", "text": "（关键流程 / 状态流转的说明。复杂流程配图：流程图用 flowchart，多角色用 sequenceDiagram。）" },
+        { "kind": "mermaid", "mermaidPath": "assets/interaction-flow.mmd", "caption": "（图注：主流程）" }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "数据埋点",
+      "anchorKey": "tracking",
+      "blocks": [
+        { "kind": "paragraph", "text": "（埋点独立成章。列出事件、参数、触发时机、上报端，供数据侧直接落地。）" },
+        {
+          "kind": "table",
+          "table": {
+            "header": ["事件名", "触发时机", "关键参数", "上报端"],
+            "rows": [
+              ["event_name", "（用户做了什么时上报）", "param_a / param_b", "前端 / 后端"]
+            ],
+            "columnWidths": [160, 220, 200, 100]
+          }
+        }
+      ]
+    },
+    {
+      "level": 1,
+      "title": "附录",
+      "anchorKey": "appendix",
+      "blocks": [
+        { "kind": "paragraph", "text": "（附录链接必须可点开：飞书文档 / 可达 URL。禁止写本地文件名。）" },
+        {
+          "kind": "list",
+          "list": {
+            "style": "unordered",
+            "items": [
+              "设计稿：[Figma](https://www.figma.com/...)",
+              "竞品 / 调研：[链接](https://...)",
+              "相关需求：[飞书文档](https://...feishu.cn/docx/...)"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

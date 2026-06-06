@@ -1,0 +1,41 @@
+%% 流程图模板 — 含决策菱形 + 重选回环 + 跳过虚线 + 终点
+%% 用法：把 <!-- TODO --> 处替换为你的内容
+%% 渲染：mmdc -i this.mmd -o out.png -p puppeteer-config.json -c mermaid-config.json -w 1600 -b white
+%%
+%% 注意陷阱：
+%% - { } 是菱形保留字，节点 label 含 {var} 模板变量时改用 [var]
+%% - 中文换行用 <br/>，不用 \n
+%% - 节点 ID（S1/Start 等）不能含 - . 空格
+
+flowchart TD
+    Start([起点：触发条件描述]) --> S1
+
+    S1["Step 1 · 阶段名<br/>简短描述<br/>关键内容点 1<br/>关键内容点 2"] --> S2
+
+    S2["Step 2 · 核心步骤<br/>展示内容 + 操作内容"] --> S3
+
+    %% 决策节点用菱形 {}
+    S3{"Step 3 · 决策点<br/>「问题描述？」"}
+
+    %% 实线箭头 = 主流程；标签放引号内
+    S3 -- "[确认]" --> S4
+    %% 回环用 -->
+    S3 -- "[重新选择]" --> S2
+
+    S4["Step 4 · 可选步骤<br/>说明可跳过条件"] --> End
+
+    %% 跳过路径用虚线 -.->
+    S3 -. "[跳过 Step 4]" .-> End
+
+    End(["终点：成功状态描述"])
+
+    %% 配色（克制，2-3 个 class 内）
+    classDef start fill:#E0E7FF,stroke:#1A3A5C,color:#1A3A5C
+    classDef step fill:#FFFFFF,stroke:#4B5563,color:#1F2937
+    classDef decision fill:#FEF3C7,stroke:#92400E,color:#78350F
+    classDef terminal fill:#D1FAE5,stroke:#065F46,color:#065F46
+
+    class Start start
+    class S1,S2,S4 step
+    class S3 decision
+    class End terminal
