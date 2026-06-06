@@ -1,0 +1,18 @@
+{
+  "name": "feishu-prd-delivery",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Delivery-layer engine for the feishu-prd Claude Code skill. Drives lark-cli to render PRDs into Feishu docx. Runtime has zero dependencies (run via `node src/*.ts` on Node >=22.6 native type-stripping); TypeScript is a dev-only type checker.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.6"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
