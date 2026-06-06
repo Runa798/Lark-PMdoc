@@ -1,19 +1,24 @@
 // Thin wrapper around the `lark-cli` binary.
 //
 // Security (plan §4.1): invoked via spawn + argument array (never a shell
-// string) so there is no command-injection surface; outbound proxy is forced to
-// the-local-proxy; access tokens are never logged.
+// string) so there is no command-injection surface; access tokens are never
+// logged.
+//
+// Networking: lark-cli talks to Feishu DIRECTLY — no proxy. The IR internal-route
+// rule applies only to the provider OAuth token; Feishu
+// uses lark-cli's own app credentials and is unrelated. Forcing it through
+// the-local-proxy changed nothing (container egress is region-pinned regardless) and
+// only added a wasted hop to a China-bound service. Do not re-add a proxy here.
 //
 // I/O contract (verified in 11-delivery-gaps-test.md):
-//   - success JSON is on stdout; diagnostics / `[WARN] proxy detected` /
-//     media progress lines are on stderr; on failure the error JSON may be on
-//     stderr. Some commands (e.g. `config show`) print a trailing non-JSON line,
-//     so we extract the first balanced {...} object rather than parsing blindly.
+//   - success JSON is on stdout; diagnostics / media progress lines are on
+//     stderr; on failure the error JSON may be on stderr. Some commands (e.g.
+//     `config show`) print a trailing non-JSON line, so we extract the first
+//     balanced {...} object rather than parsing blindly.
 
 import { spawn } from "node:child_process";
 import { withRetry } from "./retry.ts";
 
-const PROXY = "http://127.0.0.1:0";
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export class LarkError extends Error {
@@ -112,18 +117,6 @@ export interface RunOptions {
   readonly timeoutMs?: number;
 }
 
-function withProxyEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    HTTPS_PROXY: PROXY,
-    HTTP_PROXY: PROXY,
-    https_proxy: PROXY,
-    http_proxy: PROXY,
-    NO_PROXY: "",
-    no_proxy: "",
-  };
-}
-
 interface RawResult {
   readonly stdout: string;
   readonly stderr: string;
@@ -132,7 +125,7 @@ interface RawResult {
 
 function spawnLark(args: readonly string[], opts: RunOptions): Promise<RawResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn("lark-cli", [...args], { env: withProxyEnv(), cwd: opts.cwd });
+    const child = spawn("lark-cli", [...args], { cwd: opts.cwd });
     let stdout = "";
     let stderr = "";
     let settled = false;
