@@ -4,16 +4,19 @@
 //   1. assert the active lark-cli account (by open_id)
 //   2. render the manifest to numbered Lark-flavored Markdown
 //   3. `docs +create --markdown -` (MCP path; absorbs ≤50 / rate-limit / paging)
-//   4. insert media per section, anchored by the section's numbered title
-//
-// Callouts, left-image-right-text grids, and custom table column widths are not
-// expressible here and are applied by separate path-B steps (see plan §3.0).
+//   4. insert media/path-B blocks per section, anchored by the section's numbered title
 
 import { basename, dirname } from "node:path";
 import { renderManifestMarkdown } from "./lib/markdown.ts";
 import { LarkError, larkApi, larkDocs, assertActiveAccount } from "./lib/lark.ts";
 import { assertWithinWorkspace, assertMediaFile } from "./lib/guard.ts";
-import type { PrdManifest, ImageSpec } from "./lib/manifest.ts";
+import {
+  findBlockIdByText,
+  insertCallout,
+  insertGridLeftImageRightText,
+  setTableColumnWidths,
+} from "./lib/blocks.ts";
+import type { PrdManifest, ImageSpec, PrdSection } from "./lib/manifest.ts";
 import { validateManifest } from "./lib/validate.ts";
 
 export interface BuildOptions {
@@ -134,7 +137,12 @@ async function createResilient(title: string, markdown: string, folderToken: str
   throw new LarkError("docs +create exhausted retries");
 }
 
-const IMPLEMENTED_BLOCK_KINDS = new Set(["paragraph", "list", "table", "image"]);
+const IMPLEMENTED_BLOCK_KINDS = new Set(["paragraph", "list", "table", "callout", "grid", "image"]);
+
+interface TopLevelBlock {
+  readonly block_id: string;
+  readonly block_type: number;
+}
 
 interface BlockLike {
   readonly kind?: unknown;
@@ -151,6 +159,120 @@ function assertNoUnsupportedBlocks(m: PrdManifest): void {
   if (unsupported.length > 0) {
     throw new Error(`unsupported manifest block kind(s); refusing to drop content:\n- ${unsupported.join("\n- ")}`);
   }
+}
+
+function nextPageToken(data: Record<string, unknown>): string | undefined {
+  const token = data.page_token ?? data.next_page_token;
+  return typeof token === "string" && token.trim() !== "" ? token : undefined;
+}
+
+function isTopLevelChild(v: unknown, docId: string): v is TopLevelBlock {
+  return (
+    isRecord(v) &&
+    v.parent_id === docId &&
+    typeof v.block_id === "string" &&
+    typeof v.block_type === "number"
+  );
+}
+
+async function getTopLevelChildren(docId: string): Promise<readonly TopLevelBlock[]> {
+  const blocks: TopLevelBlock[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params: Record<string, unknown> = { page_size: 500 };
+    if (pageToken !== undefined) params.page_token = pageToken;
+    const data = await larkApi({
+      method: "GET",
+      path: `/open-apis/docx/v1/documents/${docId}/blocks`,
+      params,
+    });
+    if (!isRecord(data) || !Array.isArray(data.items)) {
+      throw new LarkError("GET blocks did not return items", data);
+    }
+    blocks.push(...data.items.filter((item) => isTopLevelChild(item, docId)));
+    if (data.has_more === true) {
+      pageToken = nextPageToken(data);
+      if (pageToken === undefined) throw new LarkError("GET blocks has_more without page_token", data);
+    } else {
+      pageToken = undefined;
+    }
+  } while (pageToken !== undefined);
+  return blocks;
+}
+
+function isHeadingBlockType(blockType: number): boolean {
+  return blockType >= 3 && blockType <= 9;
+}
+
+function needsPathBProcessing(section: PrdSection): boolean {
+  return section.blocks.some(
+    (block) =>
+      block.kind === "callout" ||
+      block.kind === "grid" ||
+      (block.kind === "table" && block.table.columnWidths !== undefined),
+  );
+}
+
+function firstColumnWidths(section: PrdSection): readonly number[] | undefined {
+  for (const block of section.blocks) {
+    if (block.kind === "table" && block.table.columnWidths !== undefined) return block.table.columnWidths;
+  }
+  return undefined;
+}
+
+async function requireSectionHeadingId(docId: string, anchorText: string): Promise<string> {
+  const headingId = await findBlockIdByText(docId, anchorText);
+  if (headingId === undefined) throw new Error(`created document is missing section heading "${anchorText}"`);
+  return headingId;
+}
+
+function requireHeadingIndex(children: readonly TopLevelBlock[], headingId: string, anchorText: string): number {
+  const index = children.findIndex((child) => child.block_id === headingId);
+  if (index < 0) {
+    throw new Error(`section heading "${anchorText}" (${headingId}) is not a top-level block`);
+  }
+  return index;
+}
+
+function firstTableAfterHeading(children: readonly TopLevelBlock[], headingIndex: number): string | undefined {
+  for (let i = headingIndex + 1; i < children.length; i++) {
+    const child = children[i]!;
+    if (isHeadingBlockType(child.block_type)) return undefined;
+    if (child.block_type === 31) return child.block_id;
+  }
+  return undefined;
+}
+
+async function applyPathBSectionBlocks(
+  docId: string,
+  anchorText: string,
+  section: PrdSection,
+  workspaceRoot: string,
+): Promise<void> {
+  if (!needsPathBProcessing(section)) return;
+
+  const headingId = await requireSectionHeadingId(docId, anchorText);
+  let insertedPathBBlocks = 0;
+  for (const block of section.blocks) {
+    if (block.kind !== "callout" && block.kind !== "grid") continue;
+    const children = await getTopLevelChildren(docId);
+    const headingIndex = requireHeadingIndex(children, headingId, anchorText);
+    const index = headingIndex + 1 + insertedPathBBlocks;
+    if (block.kind === "callout") {
+      await insertCallout(docId, docId, index, block.callout);
+    } else {
+      await insertGridLeftImageRightText(docId, docId, index, block.grid, workspaceRoot);
+    }
+    insertedPathBBlocks += 1;
+  }
+
+  const columnWidths = firstColumnWidths(section);
+  if (columnWidths === undefined) return;
+  const children = await getTopLevelChildren(docId);
+  const headingIndex = requireHeadingIndex(children, headingId, anchorText);
+  const tableId = firstTableAfterHeading(children, headingIndex);
+  if (tableId === undefined) throw new Error(`created document is missing a table under section "${anchorText}"`);
+  await setTableColumnWidths(docId, tableId, columnWidths);
 }
 
 async function insertImage(
@@ -196,6 +318,7 @@ export async function buildPrd(opts: BuildOptions): Promise<BuildResult> {
         await insertImage(created.doc_id, anchorText, b.image, opts.workspaceRoot);
       }
     }
+    await applyPathBSectionBlocks(created.doc_id, anchorText, section, opts.workspaceRoot);
   }
 
   return created;
