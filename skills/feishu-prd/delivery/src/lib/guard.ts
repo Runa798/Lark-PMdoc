@@ -3,8 +3,8 @@
 // media extension/size limits, and the appendix "must be a clickable link, not a
 // local file path" rule (plan D7 / §3.1).
 
-import { resolve, relative, isAbsolute, extname } from "node:path";
-import { statSync, type Stats } from "node:fs";
+import { resolve, relative, isAbsolute, extname, dirname, basename } from "node:path";
+import { realpathSync, statSync, type Stats } from "node:fs";
 
 export class GuardError extends Error {
   constructor(message: string) {
@@ -38,8 +38,24 @@ export function assertAppendixLink(target: string): string {
 /** Resolve `p` against the workspace root and reject any path that escapes it. */
 export function assertWithinWorkspace(p: string, workspaceRoot: string): string {
   const root = resolve(workspaceRoot);
+  let rootReal: string;
+  try {
+    rootReal = realpathSync.native(root);
+  } catch {
+    throw new GuardError(`workspace root not found: ${workspaceRoot}`);
+  }
   const abs = resolve(root, p);
-  const rel = relative(root, abs);
+  let targetReal: string;
+  try {
+    targetReal = realpathSync.native(abs);
+  } catch {
+    try {
+      targetReal = resolve(realpathSync.native(dirname(abs)), basename(abs));
+    } catch {
+      throw new GuardError(`path parent not found: ${p}`);
+    }
+  }
+  const rel = relative(rootReal, targetReal);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
     throw new GuardError(`path escapes workspace root: ${p}`);
   }

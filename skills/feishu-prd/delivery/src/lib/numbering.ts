@@ -26,10 +26,10 @@ export interface NumberedHeading extends Heading {
 
 const CN_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"] as const;
 
-/** Integer -> Chinese numeral. Covers 1..99 (enough for PRD top-level sections). */
+/** Integer -> Chinese numeral. Covers 1..99; larger H1 counts are rejected so callers fix the manifest instead of emitting Arabic H1 numbers. */
 export function toChineseNumeral(n: number): string {
   if (!Number.isInteger(n) || n < 1) throw new Error(`toChineseNumeral: expected positive integer, got ${n}`);
-  if (n > 99) return String(n); // beyond realistic H1 count: fall back to digits
+  if (n > 99) throw new Error(`toChineseNumeral: H1 count ${n} exceeds supported Chinese numbering range 1..99`);
   if (n < 10) return CN_DIGITS[n]!;
   const tens = Math.floor(n / 10);
   const ones = n % 10;
@@ -44,12 +44,21 @@ export function numberHeadings(headings: readonly Heading[]): NumberedHeading[] 
   let h3 = 0;
   let h4 = 0;
   let h5 = 0;
+  let hasCurrentH2 = false;
+  let hasCurrentH3 = false;
+  let hasCurrentH4 = false;
 
   return headings.map((h) => {
     let prefix: string;
     switch (h.level) {
       case 1:
         h1 += 1;
+        h3 = 0;
+        h4 = 0;
+        h5 = 0;
+        hasCurrentH2 = false;
+        hasCurrentH3 = false;
+        hasCurrentH4 = false;
         prefix = `${toChineseNumeral(h1)}、`;
         break;
       case 2:
@@ -57,20 +66,29 @@ export function numberHeadings(headings: readonly Heading[]): NumberedHeading[] 
         h3 = 0;
         h4 = 0;
         h5 = 0;
+        hasCurrentH2 = true;
+        hasCurrentH3 = false;
+        hasCurrentH4 = false;
         prefix = `${h2}. `;
         break;
       case 3:
+        if (!hasCurrentH2) throw new Error("H3 出现前必须先有 H2");
         h3 += 1;
         h4 = 0;
         h5 = 0;
+        hasCurrentH3 = true;
+        hasCurrentH4 = false;
         prefix = `${h2}.${h3} `;
         break;
       case 4:
+        if (!hasCurrentH3) throw new Error("H4 出现前必须先有 H3");
         h4 += 1;
         h5 = 0;
+        hasCurrentH4 = true;
         prefix = `${h2}.${h3}.${h4} `;
         break;
       case 5:
+        if (!hasCurrentH4) throw new Error("H5 出现前必须先有 H4");
         h5 += 1;
         prefix = `${h2}.${h3}.${h4}.${h5} `;
         break;
