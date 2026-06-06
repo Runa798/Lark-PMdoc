@@ -1,0 +1,26 @@
+# --- Secrets / PII (never commit) ---
+.secret-blacklist.local      # literal account IDs / tokens used only for local scanning
+.env
+.env.*
+*.credentials.json
+credentials.json
+.lark-cli/
+
+# --- Local scratch / process artifacts ---
+*.local
+/scratch/
+/tmp/
+workspace/
+
+# --- Rendered chart scratch (keep .mmd sources, drop bulky PNG exports) ---
+*.png.tmp
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Tooling ---
+node_modules/
+__pycache__/
