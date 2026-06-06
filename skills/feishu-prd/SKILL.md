@@ -74,7 +74,7 @@ feishu-prd/
   content/
     pipeline.md                五步写前管线 + 多模型路由 + CoVe 模板 + 剥脚手架
     voice-rubric.md            语气规格（七维 + 正负例 + 自检）
-    writing-rules.md           行文规范（吸收自 prd-writer）
+    writing-rules.md           行文规范（吸收自此前 PRD 行文积累）
   delivery/
     blocks-cheatsheet.md       落地速查（两路径 + 块类型 + 限流 + 坑表）
     src/                       TypeScript 引擎（manifest → 飞书 docx）
@@ -107,4 +107,4 @@ feishu-prd/
 
 ## 来源
 
-行文规范与 mermaid 模板吸收自旧的 `prd-writer` skill（验收标准齐全但缺生成管线、行文不达标）；本 skill 用 STORM 式五步写前管线补齐生成侧，并把交付从「手写 Markdown」升级为「引擎落地飞书 docx」。
+行文规范与 mermaid 模板吸收自此前的 PRD 行文积累（验收标准齐全但缺生成管线、行文不达标）；本 skill 用 STORM 式五步写前管线补齐生成侧，并把交付从「手写 Markdown」升级为「引擎落地飞书 docx」。
