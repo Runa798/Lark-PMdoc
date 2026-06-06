@@ -34,6 +34,7 @@ function renderBlock(b: BlockSpec): string | null {
     case "table":
       return renderTable(b.table);
     case "callout":
+    case "grid":
     case "image":
     case "mermaid":
       return null;

@@ -11,6 +11,7 @@ import type { HeadingLevel } from "./numbering.ts";
 export interface TableSpec {
   readonly header: readonly string[];
   readonly rows: readonly (readonly string[])[];
+  readonly columnWidths?: readonly number[];
 }
 
 export interface ListSpec {
@@ -29,7 +30,17 @@ export interface ImageSpec {
 
 export interface CalloutSpec {
   readonly emoji?: string;
-  readonly text: string;
+  readonly text?: string;
+  readonly lines?: readonly string[];
+  readonly backgroundColor?: number;
+  readonly borderColor?: number;
+}
+
+export interface GridSpec {
+  readonly image: ImageSpec;
+  readonly text?: string;
+  readonly paragraphs?: readonly string[];
+  readonly widthRatios?: readonly [number, number];
 }
 
 export interface AppendixLink {
@@ -43,6 +54,7 @@ export type BlockSpec =
   | { readonly kind: "list"; readonly list: ListSpec }
   | { readonly kind: "table"; readonly table: TableSpec }
   | { readonly kind: "callout"; readonly callout: CalloutSpec }
+  | { readonly kind: "grid"; readonly grid: GridSpec }
   | { readonly kind: "image"; readonly image: ImageSpec }
   | { readonly kind: "mermaid"; readonly mermaidPath: string; readonly caption?: string };
 
