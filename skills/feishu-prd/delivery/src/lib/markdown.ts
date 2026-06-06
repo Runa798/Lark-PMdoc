@@ -1,7 +1,7 @@
 // Render a PRD manifest into Lark-flavored Markdown for `docs +create`.
 //
 // Only text-renderable blocks (paragraph / list / table) are emitted here, with
-// headings numbered per D14. Media (image/mermaid) and callouts are NOT
+// headings numbered by the engine. Media (image/mermaid) and callouts are NOT
 // expressible in the create-markdown (images need upload; markdown `>` yields a
 // quote, not a callout) — the orchestrator inserts those after creation,
 // anchored by the numbered title returned alongside the markdown.

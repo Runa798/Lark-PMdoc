@@ -1,7 +1,7 @@
 // Exponential-backoff retry for transient lark-cli / Feishu failures.
 // Needed because the markdown create/update path rides Feishu's hosted MCP
-// (`mcp.feishu.cn`), which intermittently drops connections (EOF) — confirmed in
-// 11-delivery-gaps-test.md. Only errors flagged `retryable` are retried, so
+// (`mcp.feishu.cn`), which intermittently drops connections (EOF). Only errors
+// flagged `retryable` are retried, so
 // validation errors (e.g. missing title) fail fast.
 
 export interface RetryOptions {

@@ -1,16 +1,15 @@
 // Thin wrapper around the `lark-cli` binary.
 //
-// Security (plan §4.1): invoked via spawn + argument array (never a shell
+// Security: invoked via spawn + argument array (never a shell
 // string) so there is no command-injection surface; access tokens are never
 // logged.
 //
-// Networking: lark-cli talks to Feishu DIRECTLY — no proxy. The IR internal-route
-// rule applies only to the provider OAuth token; Feishu
-// uses lark-cli's own app credentials and is unrelated. Forcing it through
-// the-local-proxy changed nothing (container egress is region-pinned regardless) and
-// only added a wasted hop to a China-bound service. Do not re-add a proxy here.
+// Networking: lark-cli talks to Feishu directly using its own configured app
+// credentials, so the delivery layer needs no proxy or special network setup.
+// If your environment routes other traffic through a proxy, that is an
+// environment concern — do not hard-code one here.
 //
-// I/O contract (verified in 11-delivery-gaps-test.md):
+// I/O contract (verified against the live lark-cli):
 //   - success JSON is on stdout; diagnostics / media progress lines are on
 //     stderr; on failure the error JSON may be on stderr. Some commands (e.g.
 //     `config show`) print a trailing non-JSON line, so we extract the first
@@ -245,7 +244,7 @@ export async function larkDocs(args: readonly string[], opts: RunOptions = {}): 
 }
 
 /**
- * Assert the active lark-cli account matches the expected open_id (plan §4.1).
+ * Assert the active lark-cli account matches the expected open_id.
  * Identity is checked by open_id, never by display name (the account was renamed).
  */
 export async function assertActiveAccount(expectedOpenId: string): Promise<void> {

@@ -1,4 +1,4 @@
-// Deterministic heading numbering (plan D14).
+// Deterministic heading numbering.
 // The content layer emits headings WITHOUT numbers; this pass walks the heading
 // sequence and assigns numbers so they are always globally consistent — never
 // left to an LLM to count.
@@ -37,7 +37,7 @@ export function toChineseNumeral(n: number): string {
   return ones === 0 ? tensPart : `${tensPart}${CN_DIGITS[ones]!}`;
 }
 
-/** Assign D14 numbering to a flat, document-order sequence of headings. */
+/** Assign numbering to a flat, document-order sequence of headings. */
 export function numberHeadings(headings: readonly Heading[]): NumberedHeading[] {
   let h1 = 0;
   let h2 = 0; // global running counter, never reset

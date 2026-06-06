@@ -1,8 +1,8 @@
 // Delivery manifest — the typed contract between the content layer (which writes
-// the prose) and the delivery layer (which renders it into Feishu). Plan §1.3.
+// the prose) and the delivery layer (which renders it into Feishu).
 //
 // The content layer emits sections with headings WITHOUT numbers (numbering is a
-// deterministic engine pass, plan D14) and a list of typed blocks. Text blocks
+// deterministic engine pass) and a list of typed blocks. Text blocks
 // (paragraph/list/table) go through the markdown create path; media and callouts
 // are inserted afterwards by the orchestrator, anchored by the numbered title.
 
@@ -45,7 +45,7 @@ export interface GridSpec {
 
 export interface AppendixLink {
   readonly text: string;
-  /** must be a clickable http(s) URL — never a server-local file path (D7/§3.1). */
+  /** must be a clickable http(s) URL — never a server-local file path. */
   readonly url: string;
 }
 
@@ -60,7 +60,7 @@ export type BlockSpec =
 
 export interface PrdSection {
   readonly level: HeadingLevel;
-  /** title WITHOUT a leading number; the engine numbers it (D14). */
+  /** title WITHOUT a leading number; the engine numbers it. */
   readonly title: string;
   /** stable anchor for incremental edits / media targeting. */
   readonly anchorKey: string;

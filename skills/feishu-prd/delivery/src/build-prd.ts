@@ -1,6 +1,6 @@
 // Orchestrator: turn a delivery manifest into a Feishu PRD document.
 //
-// Flow (verified in 11-delivery-gaps-test.md):
+// Flow (verified against the live Feishu API):
 //   1. assert the active lark-cli account (by open_id)
 //   2. render the manifest to numbered Lark-flavored Markdown
 //   3. `docs +create --markdown -` (MCP path; absorbs ≤50 / rate-limit / paging)

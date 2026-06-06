@@ -1,7 +1,7 @@
-// Input validation for the delivery engine (plan §4.1).
+// Input validation for the delivery engine.
 // Centralises the boundary checks: workspace-relative paths, http(s)-only URLs,
 // media extension/size limits, and the appendix "must be a clickable link, not a
-// local file path" rule (plan D7 / §3.1).
+// local file path" rule.
 
 import { resolve, relative, isAbsolute, extname, dirname, basename } from "node:path";
 import { realpathSync, statSync, type Stats } from "node:fs";
