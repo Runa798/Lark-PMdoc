@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Delivery-layer engine for the feishu-prd Claude Code skill. Drives lark-cli to render PRDs into Feishu docx. Runtime has zero dependencies (run via `node src/*.ts` on Node >=22.6 native type-stripping); TypeScript is a dev-only type checker.",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22.6"
   },

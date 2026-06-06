@@ -17,7 +17,7 @@ _首个版本发布时补充。_
 
 ## 许可
 
-MIT —— 见 [LICENSE](./LICENSE)。
+AGPL-3.0 —— 见 [LICENSE](./LICENSE)。
 
 ---
 

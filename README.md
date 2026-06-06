@@ -17,7 +17,7 @@ _TBD on first release._
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+AGPL-3.0 — see [LICENSE](./LICENSE).
 
 ---
 
