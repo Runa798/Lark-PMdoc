@@ -64,7 +64,7 @@ test("validateManifest rejects table rows with the wrong column count", () => {
   );
 });
 
-test("validateManifest rejects negative image dimensions", () => {
+test("validateManifest rejects non-positive-integer image dimensions", () => {
   expectInvalid(
     {
       ...validManifest,
@@ -75,7 +75,7 @@ test("validateManifest rejects negative image dimensions", () => {
         },
       ],
     },
-    /image\.width must not be negative/,
+    /image\.width must be a positive integer/,
   );
 });
 
@@ -86,5 +86,67 @@ test("validateManifest rejects sections without blocks", () => {
       sections: [{ ...validManifest.sections[0]!, blocks: [] }],
     },
     /must contain at least one block/,
+  );
+});
+
+test("validateManifest rejects grid blocks with legacy text", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          ...validManifest.sections[0]!,
+          blocks: [
+            {
+              kind: "grid",
+              grid: {
+                image: { path: "a.png" },
+                text: "legacy",
+                blocks: [{ kind: "paragraph", text: "rich" }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+    /grid must use only one of text, paragraphs, or blocks/,
+  );
+});
+
+test("validateManifest rejects empty grid blocks", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          ...validManifest.sections[0]!,
+          blocks: [{ kind: "grid", grid: { image: { path: "a.png" }, blocks: [] } }],
+        },
+      ],
+    },
+    /grid\.blocks must not be empty/,
+  );
+});
+
+test("validateManifest rejects grid list items with line breaks", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          ...validManifest.sections[0]!,
+          blocks: [
+            {
+              kind: "grid",
+              grid: {
+                image: { path: "a.png" },
+                blocks: [{ kind: "list", style: "unordered", items: ["one\ntwo"] }],
+              },
+            },
+          ],
+        },
+      ],
+    },
+    /items\[0\] must not contain line breaks/,
   );
 });

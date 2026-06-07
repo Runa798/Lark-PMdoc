@@ -140,3 +140,117 @@ test("buildGridDescendants supports custom ratios and multiple right paragraphs"
     children: ["tmp_grid_right_column_text_0", "tmp_grid_right_column_text_1"],
   });
 });
+
+test("buildGridDescendants renders grid paragraph blocks with inline bold runs", () => {
+  const blocks = buildGridDescendants({
+    image: { path: "image.png" },
+    blocks: [{ kind: "paragraph", text: "Before **bold** after" }],
+  });
+
+  assert.deepEqual(blocks[4], {
+    block_id: "tmp_grid_right_column_block_0",
+    block_type: 2,
+    text: {
+      elements: [
+        {
+          text_run: {
+            content: "Before ",
+            text_element_style: {},
+          },
+        },
+        {
+          text_run: {
+            content: "bold",
+            text_element_style: { bold: true },
+          },
+        },
+        {
+          text_run: {
+            content: " after",
+            text_element_style: {},
+          },
+        },
+      ],
+    },
+  });
+});
+
+test("buildGridDescendants renders unordered grid list items as bullet blocks", () => {
+  const blocks = buildGridDescendants({
+    image: { path: "image.png" },
+    blocks: [{ kind: "list", style: "unordered", items: ["Item"] }],
+  });
+
+  assert.deepEqual(blocks[4], {
+    block_id: "tmp_grid_right_column_block_0",
+    block_type: 12,
+    bullet: {
+      elements: [
+        {
+          text_run: {
+            content: "Item",
+            text_element_style: {},
+          },
+        },
+      ],
+    },
+  });
+});
+
+test("buildGridDescendants renders ordered grid list items with explicit sequence", () => {
+  const blocks = buildGridDescendants({
+    image: { path: "image.png" },
+    blocks: [{ kind: "list", style: "ordered", items: ["First", "Second"] }],
+  });
+
+  assert.deepEqual(blocks[4], {
+    block_id: "tmp_grid_right_column_block_0",
+    block_type: 13,
+    ordered: {
+      elements: [
+        {
+          text_run: {
+            content: "First",
+            text_element_style: {},
+          },
+        },
+      ],
+      style: { sequence: "1" },
+    },
+  });
+  assert.deepEqual(blocks[5], {
+    block_id: "tmp_grid_right_column_block_1",
+    block_type: 13,
+    ordered: {
+      elements: [
+        {
+          text_run: {
+            content: "Second",
+            text_element_style: {},
+          },
+        },
+      ],
+      style: { sequence: "auto" },
+    },
+  });
+});
+
+test("buildGridDescendants keeps mixed grid block children ordered with unique ids", () => {
+  const blocks = buildGridDescendants({
+    image: { path: "image.png" },
+    blocks: [
+      { kind: "paragraph", text: "Intro" },
+      { kind: "list", style: "unordered", items: ["One", "Two"] },
+    ],
+  });
+
+  const ids = blocks.slice(4).map((block) => block.block_id);
+  assert.deepEqual(blocks[3], {
+    block_id: "tmp_grid_right_column",
+    block_type: 25,
+    grid_column: { width_ratio: 60 },
+    children: ["tmp_grid_right_column_block_0", "tmp_grid_right_column_block_1", "tmp_grid_right_column_block_2"],
+  });
+  assert.deepEqual(ids, ["tmp_grid_right_column_block_0", "tmp_grid_right_column_block_1", "tmp_grid_right_column_block_2"]);
+  assert.equal(new Set(ids).size, ids.length);
+});

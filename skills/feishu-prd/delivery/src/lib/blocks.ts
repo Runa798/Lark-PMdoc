@@ -6,6 +6,21 @@ import type { CalloutSpec, GridSpec, ImageSpec } from "./manifest.ts";
 
 export type DocxBlockBody = Record<string, unknown>;
 
+type TemporaryBlockBody = DocxBlockBody & { readonly block_id: string };
+type RichTextKey = "text" | "bullet" | "ordered";
+type OrderedSequence = "1" | "auto";
+
+interface TextElementStyle {
+  readonly bold?: true;
+}
+
+interface TextRunElement {
+  readonly text_run: {
+    readonly content: string;
+    readonly text_element_style: TextElementStyle;
+  };
+}
+
 const DEFAULT_CALLOUT_BACKGROUND = 1;
 const DEFAULT_CALLOUT_BORDER = 4;
 const DEFAULT_GRID_WIDTH_RATIOS = [40, 60] as const;
@@ -26,7 +41,58 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
-function textBlock(blockId: string, content: string): DocxBlockBody {
+function textRun(content: string, bold: boolean): TextRunElement {
+  return {
+    text_run: {
+      content,
+      text_element_style: bold ? { bold: true } : {},
+    },
+  };
+}
+
+function pushInlineRun(elements: TextRunElement[], content: string, bold: boolean): void {
+  if (content === "") return;
+  const previous = elements[elements.length - 1];
+  if (previous !== undefined && (previous.text_run.text_element_style.bold === true) === bold) {
+    elements[elements.length - 1] = textRun(`${previous.text_run.content}${content}`, bold);
+    return;
+  }
+  elements.push(textRun(content, bold));
+}
+
+export function parseInlineBold(content: string): readonly TextRunElement[] {
+  if (!content.includes("**")) return [textRun(content, false)];
+
+  const elements: TextRunElement[] = [];
+  let cursor = 0;
+  while (cursor < content.length) {
+    const open = content.indexOf("**", cursor);
+    if (open === -1) {
+      pushInlineRun(elements, content.slice(cursor), false);
+      break;
+    }
+
+    const close = content.indexOf("**", open + 2);
+    if (close === -1) {
+      pushInlineRun(elements, content.slice(cursor), false);
+      break;
+    }
+
+    if (close === open + 2) {
+      pushInlineRun(elements, content.slice(cursor, close + 2), false);
+      cursor = close + 2;
+      continue;
+    }
+
+    pushInlineRun(elements, content.slice(cursor, open), false);
+    pushInlineRun(elements, content.slice(open + 2, close), true);
+    cursor = close + 2;
+  }
+
+  return elements.length > 0 ? elements : [textRun("", false)];
+}
+
+function textBlock(blockId: string, content: string): TemporaryBlockBody {
   return {
     block_id: blockId,
     block_type: 2,
@@ -43,6 +109,38 @@ function textBlock(blockId: string, content: string): DocxBlockBody {
   };
 }
 
+function richTextBlock(
+  blockId: string,
+  key: RichTextKey,
+  elements: readonly TextRunElement[],
+  sequence?: OrderedSequence,
+): TemporaryBlockBody {
+  switch (key) {
+    case "text":
+      return {
+        block_id: blockId,
+        block_type: 2,
+        text: { elements },
+      };
+    case "bullet":
+      return {
+        block_id: blockId,
+        block_type: 12,
+        bullet: { elements },
+      };
+    case "ordered":
+      if (sequence === undefined) throw new Error("ordered sequence is required");
+      return {
+        block_id: blockId,
+        block_type: 13,
+        ordered: {
+          elements,
+          style: { sequence },
+        },
+      };
+  }
+}
+
 function calloutLines(spec: CalloutSpec): readonly string[] {
   const lines = spec.lines ?? (spec.text !== undefined ? spec.text.split(/\r?\n/) : []);
   return lines.length > 0 ? lines : [""];
@@ -57,6 +155,33 @@ function gridWidthRatios(spec: GridSpec): readonly [number, number] {
   return spec.widthRatios ?? DEFAULT_GRID_WIDTH_RATIOS;
 }
 
+function gridRightBlocks(spec: GridSpec): readonly TemporaryBlockBody[] {
+  if (spec.blocks === undefined) {
+    return gridParagraphs(spec).map((paragraph, i) => textBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_text_${i}`, paragraph));
+  }
+
+  const blocks: TemporaryBlockBody[] = [];
+  let n = 0;
+  for (const block of spec.blocks) {
+    if (block.kind === "paragraph") {
+      blocks.push(richTextBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_block_${n}`, "text", parseInlineBold(block.text)));
+      n += 1;
+      continue;
+    }
+
+    block.items.forEach((item, i) => {
+      const blockId = `${TEMP_GRID_RIGHT_COLUMN_ID}_block_${n}`;
+      if (block.style === "ordered") {
+        blocks.push(richTextBlock(blockId, "ordered", parseInlineBold(item), i === 0 ? "1" : "auto"));
+      } else {
+        blocks.push(richTextBlock(blockId, "bullet", parseInlineBold(item)));
+      }
+      n += 1;
+    });
+  }
+  return blocks;
+}
+
 export function buildCalloutChildren(spec: CalloutSpec): readonly DocxBlockBody[] {
   const lines = calloutLines(spec);
   const textIds = lines.map((_line, i) => `${TEMP_CALLOUT_ID}_text_${i}`);
@@ -64,7 +189,44 @@ export function buildCalloutChildren(spec: CalloutSpec): readonly DocxBlockBody[
     background_color: spec.backgroundColor ?? DEFAULT_CALLOUT_BACKGROUND,
     border_color: spec.borderColor ?? DEFAULT_CALLOUT_BORDER,
   };
-  if (spec.emoji !== undefined) callout.emoji_id = spec.emoji;
+  if (spec.emoji !== undefined) {
+    // Feishu emoji_id must be an official enum key, NOT a Unicode character.
+    // See: https://open.feishu.cn/document/docs/docs/data-structure/emoji.md
+    const EMOJI_MAP: Record<string, string> = {
+      "⚠️": "warning",
+      "ℹ️": "information_source",
+      "💡": "bulb",
+      "✅": "white_check_mark",
+      "❌": "x",
+      "🔥": "fire",
+      "⭐": "star",
+      "📌": "pushpin",
+      "🚀": "rocket",
+      "📝": "memo",
+      "🎯": "dart",
+      "❗": "exclamation",
+      "💬": "speech_balloon",
+      "📋": "clipboard",
+      "🔗": "link",
+      "⏰": "alarm_clock",
+      "🎉": "tada",
+      "👍": "thumbsup",
+      "❓": "question",
+      "💰": "moneybag",
+      "📊": "bar_chart",
+      "🔧": "wrench",
+    };
+    const mapped = EMOJI_MAP[spec.emoji];
+    if (mapped !== undefined) {
+      callout.emoji_id = mapped;
+    } else if (/^[a-z][a-z0-9_]*$/.test(spec.emoji)) {
+      // Already a normalized Feishu enum key (e.g. "warning", "bulb")
+      callout.emoji_id = spec.emoji;
+    } else {
+      // Unknown Unicode emoji — omit rather than send invalid value
+      // that would cause schema mismatch (error 1770006)
+    }
+  }
   return [
     {
       block_id: TEMP_CALLOUT_ID,
@@ -78,8 +240,8 @@ export function buildCalloutChildren(spec: CalloutSpec): readonly DocxBlockBody[
 
 export function buildGridDescendants(spec: GridSpec): readonly DocxBlockBody[] {
   const [leftRatio, rightRatio] = gridWidthRatios(spec);
-  const paragraphs = gridParagraphs(spec);
-  const textIds = paragraphs.map((_paragraph, i) => `${TEMP_GRID_RIGHT_COLUMN_ID}_text_${i}`);
+  const rightBlocks = gridRightBlocks(spec);
+  const rightBlockIds = rightBlocks.map((block) => block.block_id);
   return [
     {
       block_id: TEMP_GRID_ID,
@@ -102,9 +264,9 @@ export function buildGridDescendants(spec: GridSpec): readonly DocxBlockBody[] {
       block_id: TEMP_GRID_RIGHT_COLUMN_ID,
       block_type: 25,
       grid_column: { width_ratio: rightRatio },
-      children: textIds,
+      children: rightBlockIds,
     },
-    ...paragraphs.map((paragraph, i) => textBlock(textIds[i]!, paragraph)),
+    ...rightBlocks,
   ];
 }
 
@@ -162,10 +324,22 @@ async function uploadDocxImage(docId: string, imageBlockId: string, absPath: str
   return fileTokenFromUpload(apiEnvelopeData(res, "media upload"));
 }
 
+const ALIGN_MAP: Record<string, number> = { left: 1, center: 2, right: 3 };
+
 async function replaceImage(docId: string, imageBlockId: string, fileToken: string, image: ImageSpec): Promise<void> {
   const replaceImageBody: Record<string, unknown> = { token: fileToken };
-  if (image.width !== undefined) replaceImageBody.width = image.width;
-  if (image.height !== undefined) replaceImageBody.height = image.height;
+  if (image.width !== undefined && Number.isInteger(image.width) && image.width > 0) {
+    replaceImageBody.width = image.width;
+  }
+  if (image.height !== undefined && Number.isInteger(image.height) && image.height > 0) {
+    replaceImageBody.height = image.height;
+  }
+  if (image.align !== undefined && ALIGN_MAP[image.align] !== undefined) {
+    replaceImageBody.align = ALIGN_MAP[image.align];
+  }
+  if (image.caption !== undefined && image.caption.trim() !== "") {
+    replaceImageBody.caption = { content: image.caption };
+  }
   await larkApi({
     method: "PATCH",
     path: `/open-apis/docx/v1/documents/${docId}/blocks/batch_update`,

@@ -36,10 +36,15 @@ export interface CalloutSpec {
   readonly borderColor?: number;
 }
 
+export type GridRightBlock =
+  | { readonly kind: "paragraph"; readonly text: string }
+  | { readonly kind: "list"; readonly style: "ordered" | "unordered"; readonly items: readonly string[] };
+
 export interface GridSpec {
   readonly image: ImageSpec;
   readonly text?: string;
   readonly paragraphs?: readonly string[];
+  readonly blocks?: readonly GridRightBlock[];
   readonly widthRatios?: readonly [number, number];
 }
 

@@ -1,5 +1,8 @@
 import type { PrdManifest } from "./manifest.ts";
 
+const GRID_STATIC_DESCENDANT_COUNT = 4;
+const GRID_DESCENDANT_LIMIT = 1000;
+
 export class ManifestValidationError extends Error {
   readonly issues: readonly string[];
 
@@ -8,6 +11,10 @@ export class ManifestValidationError extends Error {
     this.name = "ManifestValidationError";
     this.issues = issues;
   }
+}
+
+function containsLineBreak(text: string): boolean {
+  return /\r|\n/.test(text);
 }
 
 export function validateManifest(m: PrdManifest): void {
@@ -54,21 +61,65 @@ export function validateManifest(m: PrdManifest): void {
         }
       }
       if (b.kind === "image") {
-        if (b.image.width !== undefined && b.image.width < 0) issues.push(`${blockLabel}.image.width must not be negative`);
-        if (b.image.height !== undefined && b.image.height < 0) issues.push(`${blockLabel}.image.height must not be negative`);
+        if (b.image.width !== undefined && (!Number.isInteger(b.image.width) || b.image.width <= 0)) {
+          issues.push(`${blockLabel}.image.width must be a positive integer`);
+        }
+        if (b.image.height !== undefined && (!Number.isInteger(b.image.height) || b.image.height <= 0)) {
+          issues.push(`${blockLabel}.image.height must be a positive integer`);
+        }
       }
       if (b.kind === "grid") {
-        const paragraphs = b.grid.paragraphs ?? (b.grid.text !== undefined ? b.grid.text.split(/\r?\n/) : []);
-        if (b.grid.text !== undefined && b.grid.paragraphs !== undefined) {
+        const rightBlocks = b.grid.blocks;
+        const usesText = b.grid.text !== undefined;
+        const usesParagraphs = b.grid.paragraphs !== undefined;
+        if (usesText && usesParagraphs) {
           issues.push(`${blockLabel}.grid must use either text or paragraphs, not both`);
         }
-        if (paragraphs.every((paragraph) => paragraph.trim() === "")) issues.push(`${blockLabel}.grid must contain right-column text`);
-        if (b.grid.image.width !== undefined && b.grid.image.width < 0) issues.push(`${blockLabel}.grid.image.width must not be negative`);
-        if (b.grid.image.height !== undefined && b.grid.image.height < 0) issues.push(`${blockLabel}.grid.image.height must not be negative`);
+        if (rightBlocks !== undefined && (usesText || usesParagraphs)) {
+          issues.push(`${blockLabel}.grid must use only one of text, paragraphs, or blocks`);
+        }
+
+        let rightBlockCount = 0;
+        if (rightBlocks !== undefined) {
+          if (rightBlocks.length === 0) issues.push(`${blockLabel}.grid.blocks must not be empty`);
+          rightBlocks.forEach((rightBlock, ri) => {
+            const rightBlockLabel = `${blockLabel}.grid.blocks[${ri}]`;
+            if (rightBlock.kind === "paragraph") {
+              rightBlockCount += 1;
+              if (rightBlock.text.trim() === "") issues.push(`${rightBlockLabel}.text must not be empty`);
+              if (containsLineBreak(rightBlock.text)) issues.push(`${rightBlockLabel}.text must not contain line breaks`);
+            }
+            if (rightBlock.kind === "list") {
+              const style: unknown = rightBlock.style;
+              if (style !== "ordered" && style !== "unordered") {
+                issues.push(`${rightBlockLabel}.style must be ordered or unordered`);
+              }
+              if (rightBlock.items.length === 0) issues.push(`${rightBlockLabel}.items must not be empty`);
+              rightBlockCount += rightBlock.items.length;
+              rightBlock.items.forEach((item, ii) => {
+                if (item.trim() === "") issues.push(`${rightBlockLabel}.items[${ii}] must not be empty`);
+                if (containsLineBreak(item)) issues.push(`${rightBlockLabel}.items[${ii}] must not contain line breaks`);
+              });
+            }
+          });
+        } else {
+          const paragraphs = b.grid.paragraphs ?? (b.grid.text !== undefined ? b.grid.text.split(/\r?\n/) : []);
+          rightBlockCount = paragraphs.length;
+          if (paragraphs.every((paragraph) => paragraph.trim() === "")) issues.push(`${blockLabel}.grid must contain right-column text`);
+        }
+        if (rightBlockCount + GRID_STATIC_DESCENDANT_COUNT > GRID_DESCENDANT_LIMIT) {
+          issues.push(`${blockLabel}.grid descendants must not exceed ${GRID_DESCENDANT_LIMIT}`);
+        }
+        if (b.grid.image.width !== undefined && (!Number.isInteger(b.grid.image.width) || b.grid.image.width <= 0)) {
+          issues.push(`${blockLabel}.grid.image.width must be a positive integer`);
+        }
+        if (b.grid.image.height !== undefined && (!Number.isInteger(b.grid.image.height) || b.grid.image.height <= 0)) {
+          issues.push(`${blockLabel}.grid.image.height must be a positive integer`);
+        }
         if (b.grid.widthRatios !== undefined) {
           const [left, right] = b.grid.widthRatios;
-          if (!Number.isFinite(left) || left <= 0) issues.push(`${blockLabel}.grid.widthRatios[0] must be a positive number`);
-          if (!Number.isFinite(right) || right <= 0) issues.push(`${blockLabel}.grid.widthRatios[1] must be a positive number`);
+          if (!Number.isInteger(left) || left < 1 || left > 99) issues.push(`${blockLabel}.grid.widthRatios[0] must be an integer from 1 to 99`);
+          if (!Number.isInteger(right) || right < 1 || right > 99) issues.push(`${blockLabel}.grid.widthRatios[1] must be an integer from 1 to 99`);
           if (left + right !== 100) issues.push(`${blockLabel}.grid.widthRatios must sum to 100`);
         }
       }
