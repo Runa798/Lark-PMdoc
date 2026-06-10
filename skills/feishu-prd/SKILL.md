@@ -68,7 +68,15 @@ const { doc_id, doc_url } = await buildPrd({
 
 落地细节、块类型、API 硬约束、交付 runbook、坑表全在 **`delivery/blocks-cheatsheet.md`**。
 
-**交付前后验收**用 `delivery/tools/` 参数化工具箱：gen-manifest（sections 拼装 + 流程图 splice）→ validate → deliver → readback（API 回读直方图对账）→ verify（产物 / 黑白名单 / 预算 / 覆盖 / 截图引用五项机械验收）+ wordcount（统一字数口径）。项目 config 与用法见 `delivery/tools/README.md`。
+**交付与验收命令链**（`delivery/tools/` 参数化工具箱，写完 sections 后按此顺序跑）：
+
+```
+gen-manifest（sections 拼装 + 流程图 splice）→ validate（schema + 层级 + 媒体）
+→ wordcount（统一字数口径）→ verify（产物 / 黑白名单 / 预算 / 覆盖 / 截图引用五项机械验收）
+→ deliver（交付飞书）→ readback（API 回读直方图对账）
+```
+
+项目 config 与各工具用法见 `delivery/tools/README.md`。
 
 ## 文件导航
 

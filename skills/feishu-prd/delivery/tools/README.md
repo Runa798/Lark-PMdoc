@@ -108,3 +108,24 @@ LARK_CLI_NO_PROXY=1 node deliver.mjs <manifest.json> <config.json>
 | `diagram_files_allowed` | string[] | 流程图文件名（verify 截图引用检查时放行） |
 | `expectedOpenId` | string | 交付断言用操作人 openId（deliver.mjs） |
 | `folderToken` | string | 交付目标飞书文件夹 token（deliver.mjs） |
+
+**screen_inventory 文件格式**（数组；`phase2`/`isCover` 为 true 的条目不计入一期屏覆盖）：
+
+```json
+[
+  { "id": "s-plan-list" },
+  { "id": "s-pay-bridge", "phase2": true },
+  { "id": "cover", "isCover": true }
+]
+```
+
+**screenshot_manifest 文件格式**（数组；`phase` 为 2 的条目不计入一期截图引用检查）：
+
+```json
+[
+  { "file": "s-plan-list--default.png", "phase": 1 },
+  { "file": "s-pay-bridge--entry.png", "phase": 2 }
+]
+```
+
+> Dry-run / 测试时截图可用最小占位 PNG：`python3 -c "import base64,sys;open(sys.argv[1],'wb').write(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='))" out.png`
