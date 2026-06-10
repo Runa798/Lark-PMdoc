@@ -128,6 +128,30 @@ test("validateManifest rejects empty grid blocks", () => {
   );
 });
 
+test("validateManifest accepts consecutive level increases of 1", () => {
+  // L1 -> L2 -> L3 is a valid progressive hierarchy
+  const manifest: PrdManifest = {
+    title: "PRD",
+    sections: [
+      { level: 1, title: "Chapter", anchorKey: "ch", blocks: [{ kind: "paragraph", text: "x" }] },
+      { level: 2, title: "Section", anchorKey: "sec", blocks: [{ kind: "paragraph", text: "x" }] },
+      { level: 3, title: "Subsection", anchorKey: "sub", blocks: [{ kind: "paragraph", text: "x" }] },
+    ],
+  };
+  assert.doesNotThrow(() => validateManifest(manifest));
+});
+
+test("validateManifest rejects heading level jump (L1 -> L3 skipping L2)", () => {
+  const manifest: PrdManifest = {
+    title: "PRD",
+    sections: [
+      { level: 1, title: "Chapter", anchorKey: "ch", blocks: [{ kind: "paragraph", text: "x" }] },
+      { level: 3, title: "Subsection", anchorKey: "sub", blocks: [{ kind: "paragraph", text: "x" }] },
+    ],
+  };
+  expectInvalid(manifest, /heading level jump.*L1 -> L3/);
+});
+
 test("validateManifest rejects grid list items with line breaks", () => {
   expectInvalid(
     {

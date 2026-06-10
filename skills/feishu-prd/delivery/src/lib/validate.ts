@@ -21,6 +21,20 @@ export function validateManifest(m: PrdManifest): void {
   const issues: string[] = [];
   if (m.title.trim() === "") issues.push("document title must not be empty");
 
+  // Heading hierarchy: no section may jump more than 1 level deeper than the previous section
+  // (e.g. H4 must not appear before H3 — engine hard constraint "H4 出现前必须先有 H3" FATAL)
+  let prevLevel = 0;
+  m.sections.forEach((s, si) => {
+    if (Number.isInteger(s.level) && s.level >= 1 && s.level <= 5) {
+      if (s.level > prevLevel + 1) {
+        issues.push(
+          `section[${si}] heading level jump: L${prevLevel} -> L${s.level} "${s.title}" (H${s.level} must not appear before H${s.level - 1})`,
+        );
+      }
+      prevLevel = s.level;
+    }
+  });
+
   m.sections.forEach((s, si) => {
     const sectionLabel = `section[${si}]`;
     if (s.title.trim() === "") issues.push(`${sectionLabel} title must not be empty`);
