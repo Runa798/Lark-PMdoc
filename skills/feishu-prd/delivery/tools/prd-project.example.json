@@ -1,0 +1,91 @@
+{
+  "_comment_top": "PRD 项目 config 模板。所有相对路径均相对本文件所在目录解析。",
+
+  "_comment_title": "飞书文档标题，将写入 manifest.title",
+  "title": "MyProduct PRD · V1.0",
+
+  "_comment_sections_dir": "章文件目录，内含 chapter-NN.sections.json（裸 PrdSection[] 数组）",
+  "sections_dir": "sections/full-v1",
+
+  "_comment_order": "章号列表，gen-manifest.py 按此顺序拼装各章",
+  "order": ["00", "01", "02", "03", "99"],
+
+  "_comment_file_pattern": "章文件名模板（{ch} 占位符），默认 chapter-{ch}.sections.json；特殊命名用此覆盖",
+  "file_pattern": "chapter-{ch}.sections.json",
+
+  "_comment_img_dir": "流程图图片目录（diagrams 非空时必填）",
+  "img_dir": "screenshots-v1",
+
+  "_comment_diagrams": "anchorKey → {file, caption}；无流程图时置为 {}",
+  "diagrams": {
+    "ch0-statemachine": {
+      "file": "diagram-01-state-machine.png",
+      "caption": "同步状态机：未启用 / 同步中 / 已暂停"
+    },
+    "ch2-purchase-flow": {
+      "file": "diagram-02-purchase-flow.png",
+      "caption": "升级购买泳道：App → 支付渠道 → 回流解锁"
+    }
+  },
+
+  "_comment_output": "gen-manifest.py 的输出路径（相对 config 目录）",
+  "output": "manifest-v1.json",
+
+  "_comment_budgets": "verify.py 逐章字数预算（字符数）；无预算约束可置为 {}",
+  "budgets": {
+    "00": 4000,
+    "01": 3000,
+    "02": 12000,
+    "03": 6500,
+    "99": 2300
+  },
+
+  "_comment_v_prev": "verify.py 显示减幅用的上一版字数；无对比版本可置为 {}",
+  "v_prev": {
+    "00": 5200,
+    "01": 3700,
+    "02": 19000,
+    "03": 8700,
+    "99": 4400
+  },
+
+  "_comment_artifacts": "过程产物正则列表——命中 = verify FAIL（不受白名单保护）",
+  "artifacts": [
+    "（D\\d+）", "（C-\\d+）", "（R\\d+-\\d+）",
+    "D\\d+ ?拍板",
+    "取自屏代码", "屏代码", "共用简报", "执行方案",
+    "待讨论", "编排者", "写作错误"
+  ],
+
+  "_comment_blacklist": "业务范围黑名单正则列表（本期不做的功能名）；命中 = FAIL（白名单可放行）",
+  "blacklist": [
+    "协同编辑", "团队空间", "版本回溯",
+    "离线导出", "第三方插件"
+  ],
+
+  "_comment_blacklist_99_extra_allowed": "仅 ch99 附录中可以自然名出现的黑名单条目（其余章仍禁）",
+  "blacklist_99_extra_allowed": ["版本回溯"],
+
+  "_comment_allowed": "白名单子串列表——命中行跳过全部产物/黑名单检查",
+  "allowed": [
+    "本期不做协同编辑 / 团队空间",
+    "二期能力包括"
+  ],
+
+  "_comment_screen_inventory": "屏 id 清单 JSON 路径（用于验收【2】屏覆盖；不需要时省略或置为 \"\"）",
+  "screen_inventory": "",
+
+  "_comment_screenshot_manifest": "截图清单 JSON 路径（用于验收【3】截图引用；不需要时省略或置为 \"\"）",
+  "screenshot_manifest": "screenshots-v1/截图清单-v1.json",
+
+  "_comment_diagram_files_allowed": "流程图文件名列表（verify 截图引用检查时放行，不计入「清单外」）",
+  "diagram_files_allowed": [
+    "diagram-01-state-machine.png",
+    "diagram-02-purchase-flow.png"
+  ],
+
+  "_comment_deliver_fields": "以下字段供 deliver.mjs 使用",
+  "expectedOpenId": "ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "_comment_folderToken": "交付目标飞书文件夹 token（可在 lark-drive 或 URL 中取得）",
+  "folderToken": ""
+}
