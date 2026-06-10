@@ -11,6 +11,7 @@ credentials.json
 /scratch/
 /tmp/
 workspace/
+.ccg/
 
 # --- Rendered chart scratch (keep .mmd sources, drop bulky PNG exports) ---
 *.png.tmp
