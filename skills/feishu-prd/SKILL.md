@@ -42,7 +42,9 @@ description: >-
 4. **跨模型自批（CoVe）** —— 批判者**必须 ≠ 起草者**，6 题引证回答→改写。这是质量增量最大的一步。
 5. **拼接 + voice 统一 + 剥脚手架** —— 单一模型整篇收口，产出 **delivery manifest**。
 
-行文规范看 `content/writing-rules.md`（特性叙述写法、反模式、交互状态表、计算算例、后台字段表、埋点独立成章、图表决策、Out of Scope）；语气规格看 `content/voice-rubric.md`（七维风格 + 正负例 + 自检清单）。
+行文规范看 `content/writing-rules.md`（四块结构、差异式逐态、图代文、过程产物清零、黑白名单、文风双边界、字数预算、基线先行、字段表、埋点、图表决策等 17 节）；语气规格看 `content/voice-rubric.md`（七维风格 + 正负例 + 自检清单）。
+
+**多章大型 PRD**（10+ 章、几十屏几百态）按 `content/pipeline.md` §6「规模化编排」走：共用简报（`templates/briefing-template.md` 填空）+ 逐章 spec（`templates/chapter-spec-template.md`）+ N 并行子任务 + 单一修复波。
 
 **标题不要自己编号**——编号由交付层确定性生成（H1 一/二/三、H2 全文连续 1./2./3.）。
 
@@ -64,7 +66,9 @@ const { doc_id, doc_url } = await buildPrd({
 
 含 mermaid 块时，先 `resolveMermaidToImages(manifest, workspaceRoot, render)` 预处理（飞书不渲染 mermaid，渲成 PNG 转 image 块）；`render` 是**注入式**的，按你本机的 mermaid 工具接线。
 
-落地细节、块类型、API 硬约束、坑表全在 **`delivery/blocks-cheatsheet.md`**。
+落地细节、块类型、API 硬约束、交付 runbook、坑表全在 **`delivery/blocks-cheatsheet.md`**。
+
+**交付前后验收**用 `delivery/tools/` 参数化工具箱：gen-manifest（sections 拼装 + 流程图 splice）→ validate → deliver → readback（API 回读直方图对账）→ verify（产物 / 黑白名单 / 预算 / 覆盖 / 截图引用五项机械验收）+ wordcount（统一字数口径）。项目 config 与用法见 `delivery/tools/README.md`。
 
 ## 文件导航
 
@@ -72,15 +76,18 @@ const { doc_id, doc_url } = await buildPrd({
 feishu-prd/
   SKILL.md                     ← 你在这
   content/
-    pipeline.md                五步写前管线 + 多模型路由 + CoVe 模板 + 剥脚手架
+    pipeline.md                五步写前管线 + 多模型路由 + CoVe + §6 规模化编排（多章并行生产线）
     voice-rubric.md            语气规格（七维 + 正负例 + 自检）
-    writing-rules.md           行文规范（吸收自此前 PRD 行文积累）
+    writing-rules.md           写法规范 17 节（四块 / 差异式逐态 / 清零 / 黑白名单 / 预算 / 基线先行…）
   delivery/
-    blocks-cheatsheet.md       落地速查（两路径 + 块类型 + 限流 + 坑表）
+    blocks-cheatsheet.md       落地速查（块类型 + 限流 + 交付 runbook + 坑表）
     src/                       TypeScript 引擎（manifest → 飞书 docx）
+    tools/                     参数化验收工具箱（gen-manifest / verify / readback / wordcount / deliver + README）
     package.json tsconfig.json
   templates/
     prd-skeleton.json          7 模块 PRD 骨架（填空）
+    briefing-template.md       共用简报模板（多章并行起草的单一事实源，填空）
+    chapter-spec-template.md   逐章 spec 模板（预算 + 截图授权表 + 改写点矩阵，填空）
     flowchart.mmd sequence.mmd funnel.mmd   mermaid 模板
     mermaid-config.json puppeteer-config.json mermaid-style-guide.md
 ```
@@ -99,7 +106,8 @@ feishu-prd/
 
 ## 关键不变量（详见 cheatsheet）
 
-- **编号交给引擎**，内容层标题不带序号（防 LLM 跨章节数错）。
+- **编号交给引擎**，内容层标题不带序号（防 LLM 跨章节数错）；跨章引用一律「见第 N 章「节名」」不写编号。
+- **标题层级不得跳级**（H4 出现前必先有 H3）——`validateManifest` 已强制，交付前校验即可拦住。
 - **callout = 19**（不是 34）；**grid 栏宽用数组** `[40,60]`；**表格列宽逐列**改。
 - **create children ≤ 50 / 请求**；**markdown 锁 v1**；docx 表格 ≠ 多维表。
 - **网络**：交付层用 lark-cli 自己的应用凭据**直连飞书，无需任何代理**。内容层若调用外部模型，按你本机的环境自行接线——本 skill 不内置任何主机/代理细节。
