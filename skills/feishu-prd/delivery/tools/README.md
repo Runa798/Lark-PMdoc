@@ -19,6 +19,19 @@ python3 gen-manifest.py <config.json>
 
 ---
 
+## validate.mjs
+
+**用途**：交付前 manifest 校验——引擎 `validateManifest`（schema + 标题层级跳级检查）+ 块类型 + 媒体文件存在性。**gen-manifest 之后、deliver 之前必跑**。
+
+**用法**：
+```bash
+node validate.mjs <manifest.json> [mediaRoot]   # mediaRoot 默认 = manifest 所在目录
+```
+
+**退出码**：0 = ALL CHECKS PASS；1 = 任何失败。
+
+---
+
 ## verify.py
 
 **用途**：五项机械验收——①过程产物清零 ②黑名单 ③字数预算 ④屏覆盖 ⑤截图引用。黑白名单、预算数字、屏清单路径全部从 config 读，逻辑一字不改。
