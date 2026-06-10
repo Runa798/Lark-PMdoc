@@ -116,6 +116,59 @@ function isAmbiguousCreateError(e: unknown): e is LarkError {
   return e instanceof LarkError && (e.retryable || e.message.includes("timed out"));
 }
 
+function isAsyncCreatePayload(v: unknown): v is { readonly task_id: string; readonly status: "running" } {
+  return (
+    isRecord(v) &&
+    typeof v.task_id === "string" &&
+    v.task_id !== "" &&
+    v.status === "running"
+  );
+}
+
+async function awaitAsyncCreate(
+  title: string,
+  folderToken: string | undefined,
+  createdAfterMs: number,
+): Promise<BuildResult> {
+  // Phase 1: recover the doc by title + created-after window (drive listing lag-tolerant).
+  let recovered: BuildResult | undefined;
+  for (let i = 0; i < 36; i++) {
+    await sleep(5_000);
+    try {
+      recovered = await findRecentlyCreatedDoc(title, folderToken, createdAfterMs);
+    } catch {
+      recovered = undefined;
+    }
+    if (recovered !== undefined) break;
+  }
+  if (recovered === undefined) {
+    throw new LarkError(
+      `docs +create returned async task but doc "${title}" did not appear in drive within 3 minutes`,
+    );
+  }
+
+  // Phase 2: wait for the markdown import to finish writing blocks.
+  // Heuristic: top-level block count is non-zero and stable across two consecutive polls.
+  let previousCount = -1;
+  for (let i = 0; i < 60; i++) {
+    await sleep(5_000);
+    let currentCount: number;
+    try {
+      const children = await getTopLevelChildren(recovered.doc_id);
+      currentCount = children.length;
+    } catch {
+      // Early in the import the doc may not be readable yet; treat as "not ready" and keep polling.
+      previousCount = -1;
+      continue;
+    }
+    if (currentCount > 0 && currentCount === previousCount) return recovered;
+    previousCount = currentCount;
+  }
+  throw new LarkError(
+    `docs +create async import did not stabilize for doc ${recovered.doc_id} within 5 minutes`,
+  );
+}
+
 async function createResilient(title: string, markdown: string, folderToken: string | undefined): Promise<BuildResult> {
   const args = ["+create", "--title", title, "--markdown", "-"];
   if (folderToken !== undefined) args.push("--folder-token", folderToken);
@@ -123,7 +176,13 @@ async function createResilient(title: string, markdown: string, folderToken: str
 
   for (let attempt = 0; attempt <= 2; attempt++) {
     try {
-      return requireBuildResult(await larkDocs(args, { stdin: markdown }), "docs +create");
+      const v = await larkDocs(args, { stdin: markdown });
+      if (isAsyncCreatePayload(v)) {
+        // lark-cli returns an async task_id when the build+markdown import exceeds its sync window
+        // (observed ~8s threshold). The doc is still being created in the background; poll until ready.
+        return await awaitAsyncCreate(title, folderToken, createdAfterMs);
+      }
+      return requireBuildResult(v, "docs +create");
     } catch (e) {
       if (!isAmbiguousCreateError(e)) throw e;
       // EOF and timeout on +create are ambiguous: Feishu may have created the doc while the CLI lost the response.
