@@ -389,20 +389,98 @@ export interface ApplyRefsOptions {
 }
 
 /**
+ * Injection seam for tests; production callers omit this.
+ *
+ * `buildAnchorUrlMapForDoc` polls the docs GET endpoint to wait for the
+ * markdown import to finish materializing. Tests need to drive that poll
+ * without actually sleeping or hitting the network, so the slow primitives
+ * (sleep + fetchAllBlocks) are injectable.
+ */
+export interface BuildAnchorUrlMapDeps {
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly fetchBlocks?: (docId: string) => Promise<readonly DocBlock[]>;
+  /** Override poll interval; defaults to 10_000 ms. */
+  readonly intervalMs?: number;
+  /** Override max poll attempts; defaults to 30 (i.e. 5 minutes at 10s). */
+  readonly maxAttempts?: number;
+}
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Wait for the freshly created doc's markdown import to materialize enough
+ * top-level heading blocks to cover every section in the manifest.
+ *
+ * WHY: `docs +create --markdown` returns once the create task is accepted, but
+ * Feishu materializes the resulting blocks asynchronously. The first full
+ * `fetchAllBlocks` pass after create can see only a fraction (~60% observed on
+ * a 354-heading doc) of the eventual blocks. If we build the anchor map at
+ * that point, headings that exist a few minutes later are missing and the
+ * anchorId match fails with a FATAL "cannot locate heading block" — even
+ * though the heading is in the manifest verbatim. The slower per-section
+ * insert path used to mask this because each section insertion took long
+ * enough for the import to catch up; the ref-pass is now the first full
+ * reader after create, so it must wait explicitly.
+ *
+ * Readiness criterion (both must hold):
+ *   1. top-level heading block count >= expected section count;
+ *   2. top-level block total count is stable across two consecutive polls
+ *      (no further growth — guards against catching the import mid-flight
+ *      when the heading count already happens to clear the bar).
+ */
+async function waitForDocMaterialization(
+  docId: string,
+  expectedSections: number,
+  deps: BuildAnchorUrlMapDeps,
+): Promise<readonly DocBlock[]> {
+  const sleep = deps.sleep ?? defaultSleep;
+  const fetch = deps.fetchBlocks ?? fetchAllBlocks;
+  const intervalMs = deps.intervalMs ?? 10_000;
+  const maxAttempts = deps.maxAttempts ?? 30;
+
+  let previousTotal = -1;
+  let lastAll: readonly DocBlock[] = [];
+  let lastHeadings = 0;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const all = await fetch(docId);
+    const topLevel = all.filter((b) => b.parent_id === docId);
+    const headings = topLevel.filter((b) => isHeadingBlockType(b.block_type)).length;
+    const total = topLevel.length;
+    if (headings >= expectedSections && total === previousTotal) {
+      return all;
+    }
+    previousTotal = total;
+    lastAll = all;
+    lastHeadings = headings;
+    if (attempt < maxAttempts - 1) await sleep(intervalMs);
+  }
+  const elapsedSeconds = Math.round((intervalMs * (maxAttempts - 1)) / 1000);
+  throw new LarkError(
+    `doc materialization did not stabilize for doc ${docId}: expected ${expectedSections} headings, saw ${lastHeadings} after ${elapsedSeconds} s`,
+    { lastBlockCount: lastAll.length },
+  );
+}
+
+/**
  * Resolve every anchored section's heading block_id (via doc-blocks GET) and
  * return the anchorId -> URL map. The map is built once per build and shared
  * by path-B insertion and path-A PATCH planning.
+ *
+ * Polls the doc-blocks endpoint first to ensure Feishu has finished
+ * materializing the markdown import — see waitForDocMaterialization for the
+ * race condition this guards against.
  */
 export async function buildAnchorUrlMapForDoc(
   manifest: PrdManifest,
   built: BuildResultLike,
   numberedTitles: readonly string[],
+  deps: BuildAnchorUrlMapDeps = {},
 ): Promise<ReadonlyMap<string, string>> {
   const anchored = manifest.sections
     .map((section, index) => ({ index, section, numberedTitle: numberedTitles[index]! }))
     .filter((a): a is AnchoredSection => a.section.anchorId !== undefined);
   if (anchored.length === 0) return new Map();
-  const all = await fetchAllBlocks(built.doc_id);
+  const all = await waitForDocMaterialization(built.doc_id, numberedTitles.length, deps);
   const docId = built.doc_id;
   const topLevel = all.filter((b) => b.parent_id === docId);
   return buildAnchorUrlMap(anchored, topLevel, built.doc_url);

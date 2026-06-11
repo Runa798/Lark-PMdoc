@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planSectionPatchesForTest } from "./ref-pass.ts";
-import type { PrdSection } from "./manifest.ts";
+import { buildAnchorUrlMapForDoc, planSectionPatchesForTest } from "./ref-pass.ts";
+import type { PrdManifest, PrdSection } from "./manifest.ts";
 
 const url = "https://example.test/docx/D#H100";
 const resolver = (id: string): string | undefined =>
@@ -99,6 +99,163 @@ test("planSectionPatches locates table cell text blocks via the table descendant
   );
   assert.equal(targets.length, 1);
   assert.equal(targets[0]!.blockId, "c3t");
+});
+
+// --- buildAnchorUrlMapForDoc materialization-wait tests ---------------------
+//
+// The polling loop is injected with `sleep` + `fetchBlocks` so the tests can
+// drive it without real timers or HTTP. The mock fetch returns a different
+// snapshot each call to simulate Feishu's async block materialization.
+
+interface RawDocBlock {
+  readonly block_id: string;
+  readonly block_type: number;
+  readonly parent_id: string;
+  readonly children?: readonly string[];
+  readonly raw: Record<string, unknown>;
+}
+
+function headingBlock(id: string, title: string, docId: string): RawDocBlock {
+  return {
+    block_id: id,
+    block_type: 3,
+    parent_id: docId,
+    raw: {
+      block_id: id,
+      block_type: 3,
+      parent_id: docId,
+      heading1: {
+        elements: [{ text_run: { content: title, text_element_style: {} } }],
+      },
+    },
+  };
+}
+
+function paragraphBlock(id: string, text: string, docId: string): RawDocBlock {
+  return {
+    block_id: id,
+    block_type: 2,
+    parent_id: docId,
+    raw: {
+      block_id: id,
+      block_type: 2,
+      parent_id: docId,
+      text: { elements: [{ text_run: { content: text, text_element_style: {} } }] },
+    },
+  };
+}
+
+function manifestWithTwoAnchoredSections(): PrdManifest {
+  return {
+    title: "T",
+    sections: [
+      { level: 1, title: "First", anchorKey: "first", anchorId: "a1", blocks: [] },
+      { level: 1, title: "Second", anchorKey: "second", anchorId: "a2", blocks: [] },
+    ],
+  };
+}
+
+test("buildAnchorUrlMapForDoc polls until heading count covers manifest and total is stable", async () => {
+  const docId = "DOC";
+  const docUrl = "https://example.test/docx/DOC";
+  const manifest = manifestWithTwoAnchoredSections();
+  const numberedTitles = ["1 First", "2 Second"];
+
+  // Snapshots simulate the async materialization:
+  //   call 1: only 1/2 headings present  -> wait
+  //   call 2: both headings present but a fresh paragraph also appeared,
+  //           so the total count is still growing -> wait
+  //   call 3: same total as call 2 -> ready
+  const callOne: RawDocBlock[] = [headingBlock("H1", "1 First", docId)];
+  const callTwo: RawDocBlock[] = [
+    headingBlock("H1", "1 First", docId),
+    headingBlock("H2", "2 Second", docId),
+    paragraphBlock("P1", "body", docId),
+  ];
+  const callThree: RawDocBlock[] = [...callTwo];
+  const snapshots = [callOne, callTwo, callThree];
+
+  let fetchCalls = 0;
+  const sleeps: number[] = [];
+
+  const result = await buildAnchorUrlMapForDoc(manifest, { doc_id: docId, doc_url: docUrl }, numberedTitles, {
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
+    fetchBlocks: async (id) => {
+      assert.equal(id, docId);
+      const snap = snapshots[Math.min(fetchCalls, snapshots.length - 1)]!;
+      fetchCalls += 1;
+      return snap;
+    },
+    intervalMs: 10_000,
+    maxAttempts: 30,
+  });
+
+  assert.equal(fetchCalls, 3, "should poll three times until stable");
+  assert.equal(sleeps.length, 2, "should sleep between polls but not after success");
+  assert.deepEqual(sleeps, [10_000, 10_000]);
+  assert.equal(result.size, 2);
+  assert.equal(result.get("a1"), `${docUrl}#H1`);
+  assert.equal(result.get("a2"), `${docUrl}#H2`);
+});
+
+test("buildAnchorUrlMapForDoc throws with diagnostic when materialization never completes", async () => {
+  const docId = "DOC";
+  const docUrl = "https://example.test/docx/DOC";
+  const manifest = manifestWithTwoAnchoredSections();
+  const numberedTitles = ["1 First", "2 Second"];
+
+  // Always incomplete: only one heading ever materializes.
+  const incomplete: RawDocBlock[] = [headingBlock("H1", "1 First", docId)];
+  let fetchCalls = 0;
+  let sleepCalls = 0;
+
+  await assert.rejects(
+    () =>
+      buildAnchorUrlMapForDoc(manifest, { doc_id: docId, doc_url: docUrl }, numberedTitles, {
+        sleep: async () => {
+          sleepCalls += 1;
+        },
+        fetchBlocks: async () => {
+          fetchCalls += 1;
+          return incomplete;
+        },
+        intervalMs: 10_000,
+        maxAttempts: 3,
+      }),
+    (err: Error) => {
+      assert.match(err.message, /doc materialization did not stabilize/);
+      assert.match(err.message, /expected 2 headings, saw 1/);
+      assert.match(err.message, /after 20 s/);
+      return true;
+    },
+  );
+
+  assert.equal(fetchCalls, 3, "should exhaust all attempts");
+  assert.equal(sleepCalls, 2, "should sleep between attempts but not after the last one");
+});
+
+test("buildAnchorUrlMapForDoc returns empty map without polling when no anchored sections", async () => {
+  const manifest: PrdManifest = {
+    title: "T",
+    sections: [{ level: 1, title: "First", anchorKey: "first", blocks: [] }],
+  };
+  let fetchCalls = 0;
+  const result = await buildAnchorUrlMapForDoc(
+    manifest,
+    { doc_id: "DOC", doc_url: "https://example.test/docx/DOC" },
+    ["1 First"],
+    {
+      sleep: async () => {},
+      fetchBlocks: async () => {
+        fetchCalls += 1;
+        return [];
+      },
+    },
+  );
+  assert.equal(result.size, 0);
+  assert.equal(fetchCalls, 0, "should short-circuit before any fetch");
 });
 
 test("planSectionPatches raises when no doc block matches a referenced paragraph", () => {
