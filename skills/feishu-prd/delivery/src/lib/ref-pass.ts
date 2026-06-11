@@ -14,8 +14,19 @@
 
 import { LarkError, larkApi } from "./lark.ts";
 import { parseInlineRich, patchBlockTextElements, type RefResolver, type TextRunElement } from "./blocks.ts";
-import { hasRef, stripRefs } from "./refs.ts";
+import { hasRef, stripInlineMarks, stripRefs } from "./refs.ts";
 import type { BlockSpec, PrdManifest, PrdSection, TableSpec, ListSpec } from "./manifest.ts";
+
+/**
+ * Normalize manifest text to the form actually stored as plain text in the
+ * created docx: refs reduced to their display text AND paired markdown inline
+ * marks (`**bold**`, `` `code` ``) removed, since the markdown importer turns
+ * those into styling rather than literal characters. Block-locating equality
+ * compares against this normalized form.
+ */
+export function renderedPlainText(content: string): string {
+  return stripInlineMarks(stripRefs(content));
+}
 
 export interface RefStats {
   /** total `[[ref:...]]` occurrences across the manifest (path-A + path-B). */
@@ -141,19 +152,19 @@ interface ManifestText {
 
 function manifestParagraphTexts(block: BlockSpec, blockIndex: number): readonly ManifestText[] {
   if (block.kind === "paragraph") {
-    return [{ blockIndex, stripped: stripRefs(block.text), source: block.text }];
+    return [{ blockIndex, stripped: renderedPlainText(block.text), source: block.text }];
   }
   return [];
 }
 
 function manifestListItems(list: ListSpec, blockIndex: number): readonly ManifestText[] {
-  return list.items.map((it) => ({ blockIndex, stripped: stripRefs(it), source: it }));
+  return list.items.map((it) => ({ blockIndex, stripped: renderedPlainText(it), source: it }));
 }
 
 function manifestTableCells(table: TableSpec, blockIndex: number): readonly ManifestText[] {
   const cells: ManifestText[] = [];
-  for (const cell of table.header) cells.push({ blockIndex, stripped: stripRefs(cell), source: cell });
-  for (const row of table.rows) for (const cell of row) cells.push({ blockIndex, stripped: stripRefs(cell), source: cell });
+  for (const cell of table.header) cells.push({ blockIndex, stripped: renderedPlainText(cell), source: cell });
+  for (const row of table.rows) for (const cell of row) cells.push({ blockIndex, stripped: renderedPlainText(cell), source: cell });
   return cells;
 }
 
@@ -261,7 +272,7 @@ function planSectionPatches(
   section.blocks.forEach((b, blockIndex) => {
     if (b.kind === "paragraph") {
       if (!hasRef(b.text)) return;
-      const stripped = stripRefs(b.text);
+      const stripped = renderedPlainText(b.text);
       const occ = paragraphCounters.get(stripped) ?? 0;
       paragraphCounters.set(stripped, occ + 1);
       const target = findTextBlockInSection(window, stripped, occ);

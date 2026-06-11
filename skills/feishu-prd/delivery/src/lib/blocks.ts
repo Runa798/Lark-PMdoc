@@ -150,6 +150,17 @@ function parseBoldInSegment(content: string, linkUrl: string | undefined, elemen
  * is its own segment).
  */
 export function parseInlineRich(content: string, resolveRef: RefResolver): readonly TextRunElement[] {
+  // Guard: parseBoldInSegment handles `**bold**` (paired) and falls through for
+  // anything else literally. If the text contains a ref AND any inline mark we
+  // do NOT model (currently: backticks for inline code), we cannot faithfully
+  // rebuild the elements array — the mark would be written back as a literal
+  // character into the doc, drifting from the rendered form. Refuse loudly so
+  // the caller learns to extend the parser instead of silently corrupting text.
+  if (content.includes("[[ref:") && content.includes("`")) {
+    throw new Error(
+      `parseInlineRich: refusing to rebuild elements for content mixing refs with unsupported inline mark \`backtick\`; extend the parser before adding such combinations to the manifest. Content head: "${content.slice(0, 80)}"`,
+    );
+  }
   const elements: TextRunElement[] = [];
   for (const segment of parseInlineRefs(content)) {
     const linkUrl = segment.kind === "ref" ? resolveRef(segment.anchorId) : undefined;

@@ -277,3 +277,146 @@ test("planSectionPatches raises when no doc block matches a referenced paragraph
     ),
   );
 });
+
+test("planSectionPatches matches list items with bold against doc text without asterisks", () => {
+  // The markdown importer turns `**T5**` into a bold run inside the doc; the
+  // doc's plain text contains no asterisks. Manifest text DOES contain `**`,
+  // so the locator must normalize past it before equality matching.
+  const section: PrdSection = {
+    level: 1,
+    title: "Items",
+    anchorKey: "items",
+    blocks: [
+      {
+        kind: "list",
+        list: {
+          style: "unordered",
+          items: ["**T5 large screen (landscape)**: see [[ref:target|note]] for details"],
+        },
+      },
+    ],
+  };
+  const targets = planSectionPatchesForTest(
+    section,
+    "h1",
+    [
+      { block_id: "h1", block_type: 3, parent_id: "doc" },
+      {
+        block_id: "li1",
+        block_type: 12,
+        parent_id: "doc",
+        // doc plain text: no asterisks, ref rendered as display text "note"
+        text: "T5 large screen (landscape): see note for details",
+      },
+    ],
+    resolver,
+  );
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0]!.blockId, "li1");
+  // Bold span and link span both present in the rebuilt elements.
+  const contents = targets[0]!.elements.map((e) => e.text_run.content);
+  assert.deepEqual(contents, [
+    "T5 large screen (landscape)",
+    ": see ",
+    "note",
+    " for details",
+  ]);
+  const styles = targets[0]!.elements.map((e) => e.text_run.text_element_style);
+  assert.equal(styles[0]!.bold, true);
+  assert.equal(styles[2]!.link?.url, url);
+});
+
+test("planSectionPatches matches table cells with bold against doc text without asterisks", () => {
+  const section: PrdSection = {
+    level: 1,
+    title: "T",
+    anchorKey: "t",
+    blocks: [
+      {
+        kind: "table",
+        table: {
+          header: ["A", "B"],
+          rows: [["**Bold heading**", "see [[ref:target|here]]"]],
+        },
+      },
+    ],
+  };
+  const targets = planSectionPatchesForTest(
+    section,
+    "h1",
+    [
+      { block_id: "h1", block_type: 3, parent_id: "doc" },
+      { block_id: "tbl", block_type: 31, parent_id: "doc", children: ["row1"] },
+    ],
+    resolver,
+    [
+      { block_id: "row1", block_type: 32, parent_id: "tbl", children: ["c1", "c2", "c3", "c4"] },
+      { block_id: "c1", block_type: 33, parent_id: "row1", children: ["c1t"] },
+      { block_id: "c1t", block_type: 2, parent_id: "c1", text: "A" },
+      { block_id: "c2", block_type: 33, parent_id: "row1", children: ["c2t"] },
+      { block_id: "c2t", block_type: 2, parent_id: "c2", text: "B" },
+      { block_id: "c3", block_type: 33, parent_id: "row1", children: ["c3t"] },
+      // doc cell: no asterisks (bold became styling)
+      { block_id: "c3t", block_type: 2, parent_id: "c3", text: "Bold heading" },
+      { block_id: "c4", block_type: 33, parent_id: "row1", children: ["c4t"] },
+      { block_id: "c4t", block_type: 2, parent_id: "c4", text: "see here" },
+    ],
+  );
+  // Only the ref-bearing cell (c4) is patched; the bold-only cell is skipped
+  // (no ref) but must still match for the table-shape sanity check to pass.
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0]!.blockId, "c4t");
+});
+
+test("planSectionPatches preserves an unpaired single * in matched paragraph text", () => {
+  // Literal `c-*` style tokens must NOT be stripped: only paired ** counts as
+  // bold. The matcher and the elements rebuilder both have to honor this.
+  const section: PrdSection = {
+    level: 1,
+    title: "S",
+    anchorKey: "s",
+    blocks: [
+      { kind: "paragraph", text: "token c-* and [[ref:target|jump]]" },
+    ],
+  };
+  const targets = planSectionPatchesForTest(
+    section,
+    "h1",
+    [
+      { block_id: "h1", block_type: 3, parent_id: "doc" },
+      // Doc plain text retains the literal single `*` since it was never paired.
+      { block_id: "p1", block_type: 2, parent_id: "doc", text: "token c-* and jump" },
+    ],
+    resolver,
+  );
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0]!.blockId, "p1");
+});
+
+test("planSectionPatches raises when a ref-bearing paragraph contains an unsupported backtick mark", () => {
+  // Refs combined with inline-code backticks are not in the corpus today; the
+  // elements rebuilder cannot model them, so the guard refuses loudly instead
+  // of writing back a literal backtick that would drift from the rendered form.
+  const section: PrdSection = {
+    level: 1,
+    title: "S",
+    anchorKey: "s",
+    blocks: [
+      { kind: "paragraph", text: "see `code` [[ref:target|here]]" },
+    ],
+  };
+  assert.throws(
+    () =>
+      planSectionPatchesForTest(
+        section,
+        "h1",
+        [
+          { block_id: "h1", block_type: 3, parent_id: "doc" },
+          // Doc plain text after markdown import: backticks stripped, ref as display text.
+          { block_id: "p1", block_type: 2, parent_id: "doc", text: "see code here" },
+        ],
+        resolver,
+      ),
+    /refusing to rebuild elements/,
+  );
+});

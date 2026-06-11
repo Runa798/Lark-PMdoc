@@ -70,6 +70,58 @@ export function stripRefs(content: string): string {
     .join("");
 }
 
+/**
+ * Strip markdown inline marks that the docx markdown importer converts into
+ * styling rather than literal characters: paired `**...**` (bold) and paired
+ * `` `...` `` (inline code) — only the marks are removed, the inner content is
+ * preserved.
+ *
+ * Unpaired single `*` and unpaired single `` ` `` are kept verbatim: the
+ * corpus contains literal sequences like `c-*` that must not be mangled.
+ * Triple-or-more `*` runs (e.g. bold-italic `***x***`) are not in scope and
+ * collapse via the same pair-matching loop as `**` — outer pair removed, inner
+ * `*` preserved (which would still drift from the rendered plain text, but the
+ * current corpus contains no such cases; the guard in `parseInlineRich` covers
+ * the symmetric concern for the elements rebuilder).
+ *
+ * Used by the ref-pass to normalize manifest text down to what the docx
+ * actually exposes as plain text after import (no asterisks, no backticks),
+ * so block-locating equality matches succeed.
+ */
+export function stripInlineMarks(content: string): string {
+  return stripPairedDelim(stripPairedDelim(content, "**"), "`");
+}
+
+function stripPairedDelim(content: string, delim: string): string {
+  if (!content.includes(delim)) return content;
+  let out = "";
+  let cursor = 0;
+  const delimLen = delim.length;
+  while (cursor < content.length) {
+    const open = content.indexOf(delim, cursor);
+    if (open === -1) {
+      out += content.slice(cursor);
+      return out;
+    }
+    const close = content.indexOf(delim, open + delimLen);
+    if (close === -1) {
+      // unpaired opener: keep the rest verbatim, including the delim
+      out += content.slice(cursor);
+      return out;
+    }
+    if (close === open + delimLen) {
+      // empty pair "****" or "``": keep both delims literally, advance past them
+      out += content.slice(cursor, close + delimLen);
+      cursor = close + delimLen;
+      continue;
+    }
+    out += content.slice(cursor, open);
+    out += content.slice(open + delimLen, close);
+    cursor = close + delimLen;
+  }
+  return out;
+}
+
 /** True iff the content contains at least one ref syntax occurrence. */
 export function hasRef(content: string): boolean {
   if (!content.includes("[[ref:")) return false;
