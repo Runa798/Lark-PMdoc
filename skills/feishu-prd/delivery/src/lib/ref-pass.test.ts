@@ -393,10 +393,11 @@ test("planSectionPatches preserves an unpaired single * in matched paragraph tex
   assert.equal(targets[0]!.blockId, "p1");
 });
 
-test("planSectionPatches raises when a ref-bearing paragraph contains an unsupported backtick mark", () => {
-  // Refs combined with inline-code backticks are not in the corpus today; the
-  // elements rebuilder cannot model them, so the guard refuses loudly instead
-  // of writing back a literal backtick that would drift from the rendered form.
+test("planSectionPatches rebuilds inline-code runs alongside a ref link", () => {
+  // Backticks + refs are both supported by parseInlineRich. The markdown
+  // importer strips the backticks to plain text in the doc, so the matcher
+  // still finds the block; the rebuilt elements carry inline_code:true on
+  // the code span and a link on the ref span, side by side.
   const section: PrdSection = {
     level: 1,
     title: "S",
@@ -405,18 +406,26 @@ test("planSectionPatches raises when a ref-bearing paragraph contains an unsuppo
       { kind: "paragraph", text: "see `code` [[ref:target|here]]" },
     ],
   };
-  assert.throws(
-    () =>
-      planSectionPatchesForTest(
-        section,
-        "h1",
-        [
-          { block_id: "h1", block_type: 3, parent_id: "doc" },
-          // Doc plain text after markdown import: backticks stripped, ref as display text.
-          { block_id: "p1", block_type: 2, parent_id: "doc", text: "see code here" },
-        ],
-        resolver,
-      ),
-    /refusing to rebuild elements/,
+  const targets = planSectionPatchesForTest(
+    section,
+    "h1",
+    [
+      { block_id: "h1", block_type: 3, parent_id: "doc" },
+      { block_id: "p1", block_type: 2, parent_id: "doc", text: "see code here" },
+    ],
+    resolver,
   );
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0]!.blockId, "p1");
+  assert.deepEqual(targets[0]!.elements, [
+    { text_run: { content: "see ", text_element_style: {} } },
+    { text_run: { content: "code", text_element_style: { inline_code: true } } },
+    { text_run: { content: " ", text_element_style: {} } },
+    {
+      text_run: {
+        content: "here",
+        text_element_style: { link: { url } },
+      },
+    },
+  ]);
 });

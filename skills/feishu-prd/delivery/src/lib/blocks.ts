@@ -18,6 +18,7 @@ interface LinkStyle {
 
 interface TextElementStyle {
   readonly bold?: true;
+  readonly inline_code?: true;
   readonly link?: LinkStyle;
 }
 
@@ -58,16 +59,18 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 interface InlineStyle {
   readonly bold: boolean;
+  readonly inlineCode: boolean;
   readonly linkUrl?: string;
 }
 
 function styleEquals(a: InlineStyle, b: InlineStyle): boolean {
-  return a.bold === b.bold && a.linkUrl === b.linkUrl;
+  return a.bold === b.bold && a.inlineCode === b.inlineCode && a.linkUrl === b.linkUrl;
 }
 
 function makeRun(content: string, style: InlineStyle): TextRunElement {
-  const elementStyle: { bold?: true; link?: LinkStyle } = {};
+  const elementStyle: { bold?: true; inline_code?: true; link?: LinkStyle } = {};
   if (style.bold) elementStyle.bold = true;
+  if (style.inlineCode) elementStyle.inline_code = true;
   if (style.linkUrl !== undefined) {
     // The docx server stores the URL verbatim (PATCH update_text_elements does
     // not percent-decode it on read), and the raw URL is the form verified to
@@ -90,6 +93,7 @@ function pushRun(elements: TextRunElement[], content: string, style: InlineStyle
   if (previous !== undefined) {
     const previousStyle: InlineStyle = {
       bold: previous.text_run.text_element_style.bold === true,
+      inlineCode: previous.text_run.text_element_style.inline_code === true,
       linkUrl: previous.text_run.text_element_style.link?.url,
     };
     // Coalesce same-style adjacent runs. Both sides are raw URLs (makeRun
@@ -104,69 +108,85 @@ function pushRun(elements: TextRunElement[], content: string, style: InlineStyle
 
 /**
  * Parse a single text segment that contains no `[[ref:...]]` syntax, emitting
- * runs that respect `**bold**`. Empty input yields an empty run so callers
- * always get at least one element (docx requires a non-empty elements array).
+ * runs that respect paired `**bold**` and paired `` `inline code` ``. The two
+ * marks may nest in either direction (`` **`x`** `` and `` `**x**` `` both
+ * produce a single run with bold+inline_code). Unpaired `**` or `` ` `` are
+ * emitted literally — the docx markdown importer treats unpaired marks as
+ * literal characters too, so the rebuilt run text stays aligned with what the
+ * doc actually renders.
  */
-function parseBoldInSegment(content: string, linkUrl: string | undefined, elements: TextRunElement[]): void {
-  if (!content.includes("**")) {
-    pushRun(elements, content, { bold: false, linkUrl });
+function parseMarksInSegment(
+  content: string,
+  baseStyle: InlineStyle,
+  elements: TextRunElement[],
+): void {
+  const open = findNextOpenMark(content, 0);
+  if (open === undefined) {
+    pushRun(elements, content, baseStyle);
     return;
   }
 
-  let cursor = 0;
-  while (cursor < content.length) {
-    const open = content.indexOf("**", cursor);
-    if (open === -1) {
-      pushRun(elements, content.slice(cursor), { bold: false, linkUrl });
-      return;
-    }
-
-    const close = content.indexOf("**", open + 2);
-    if (close === -1) {
-      pushRun(elements, content.slice(cursor), { bold: false, linkUrl });
-      return;
-    }
-
-    if (close === open + 2) {
-      pushRun(elements, content.slice(cursor, close + 2), { bold: false, linkUrl });
-      cursor = close + 2;
-      continue;
-    }
-
-    pushRun(elements, content.slice(cursor, open), { bold: false, linkUrl });
-    pushRun(elements, content.slice(open + 2, close), { bold: true, linkUrl });
-    cursor = close + 2;
+  const close = content.indexOf(open.delim, open.index + open.delim.length);
+  if (close === -1) {
+    // Unpaired opener — emit the entire remaining content verbatim under the
+    // base style. Matches the markdown importer behaviour for stray marks.
+    pushRun(elements, content, baseStyle);
+    return;
   }
+
+  if (close === open.index + open.delim.length) {
+    // Empty pair (`****` or ` `` `): keep both delimiters literally so the
+    // rebuilt text matches the importer's verbatim handling.
+    pushRun(elements, content.slice(0, close + open.delim.length), baseStyle);
+    parseMarksInSegment(content.slice(close + open.delim.length), baseStyle, elements);
+    return;
+  }
+
+  pushRun(elements, content.slice(0, open.index), baseStyle);
+  const innerStyle: InlineStyle =
+    open.kind === "bold"
+      ? { ...baseStyle, bold: true }
+      : { ...baseStyle, inlineCode: true };
+  parseMarksInSegment(content.slice(open.index + open.delim.length, close), innerStyle, elements);
+  parseMarksInSegment(content.slice(close + open.delim.length), baseStyle, elements);
+}
+
+type MarkKind = "bold" | "code";
+interface NextMark {
+  readonly kind: MarkKind;
+  readonly delim: "**" | "`";
+  readonly index: number;
+}
+
+function findNextOpenMark(content: string, from: number): NextMark | undefined {
+  const boldAt = content.indexOf("**", from);
+  const codeAt = content.indexOf("`", from);
+  if (boldAt === -1 && codeAt === -1) return undefined;
+  if (boldAt === -1) return { kind: "code", delim: "`", index: codeAt };
+  if (codeAt === -1) return { kind: "bold", delim: "**", index: boldAt };
+  if (codeAt < boldAt) return { kind: "code", delim: "`", index: codeAt };
+  return { kind: "bold", delim: "**", index: boldAt };
 }
 
 /**
- * Parse manifest inline text — `**bold**` + `[[ref:anchorId|display]]` — into
- * docx text_run elements. `resolveRef` returns a clickable URL for an anchorId
- * or `undefined` if the ref is unknown; unresolved refs are rendered as plain
- * (display) text so the caller can decide how to surface the failure.
+ * Parse manifest inline text — `**bold**`, `` `inline code` `` and
+ * `[[ref:anchorId|display]]` — into docx text_run elements. `resolveRef`
+ * returns a clickable URL for an anchorId or `undefined` if the ref is
+ * unknown; unresolved refs are rendered as plain (display) text so the
+ * caller can decide how to surface the failure.
  *
- * Bold styling INSIDE a ref display segment is preserved (a run can be both
- * bold and linked); bold styling does not cross ref boundaries (the ref text
- * is its own segment).
+ * Bold and inline-code styling INSIDE a ref display segment are preserved
+ * (a run can be bold and/or inline-code AND linked); they do not cross ref
+ * boundaries (the ref text is its own segment). `**` and `` ` `` may nest in
+ * either order; unpaired marks are emitted verbatim.
  */
 export function parseInlineRich(content: string, resolveRef: RefResolver): readonly TextRunElement[] {
-  // Guard: parseBoldInSegment handles `**bold**` (paired) and falls through for
-  // anything else literally. If the text contains a ref AND any inline mark we
-  // do NOT model (currently: backticks for inline code), we cannot faithfully
-  // rebuild the elements array — the mark would be written back as a literal
-  // character into the doc, drifting from the rendered form. Refuse loudly so
-  // the caller learns to extend the parser instead of silently corrupting text.
-  if (content.includes("[[ref:") && content.includes("`")) {
-    throw new Error(
-      `parseInlineRich: refusing to rebuild elements for content mixing refs with unsupported inline mark \`backtick\`; extend the parser before adding such combinations to the manifest. Content head: "${content.slice(0, 80)}"`,
-    );
-  }
   const elements: TextRunElement[] = [];
   for (const segment of parseInlineRefs(content)) {
     const linkUrl = segment.kind === "ref" ? resolveRef(segment.anchorId) : undefined;
-    parseBoldInSegment(segment.text, linkUrl, elements);
+    parseMarksInSegment(segment.text, { bold: false, inlineCode: false, linkUrl }, elements);
   }
-  return elements.length > 0 ? elements : [makeRun("", { bold: false })];
+  return elements.length > 0 ? elements : [makeRun("", { bold: false, inlineCode: false })];
 }
 
 /**

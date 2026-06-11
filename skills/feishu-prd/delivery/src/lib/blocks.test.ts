@@ -347,3 +347,85 @@ test("buildGridDescendants bakes link runs into a grid right-column list when re
     },
   });
 });
+
+test("parseInlineBold emits an inline_code run for a paired backtick span", () => {
+  // Standalone `code` is the simplest case: one run, inline_code:true, no link.
+  assert.deepEqual(parseInlineBold("call `fn()` first"), [
+    { text_run: { content: "call ", text_element_style: {} } },
+    { text_run: { content: "fn()", text_element_style: { inline_code: true } } },
+    { text_run: { content: " first", text_element_style: {} } },
+  ]);
+});
+
+test("parseInlineBold composes bold+inline_code with code nested inside bold", () => {
+  // **`X`** — outer bold opens first, inner code toggles bold+inline_code on
+  // the same run.
+  assert.deepEqual(parseInlineBold("see **`ENV.api`** now"), [
+    { text_run: { content: "see ", text_element_style: {} } },
+    {
+      text_run: {
+        content: "ENV.api",
+        text_element_style: { bold: true, inline_code: true },
+      },
+    },
+    { text_run: { content: " now", text_element_style: {} } },
+  ]);
+});
+
+test("parseInlineBold composes bold+inline_code with bold nested inside code", () => {
+  // `**X**` — outer code opens first; the inner bold still produces a single
+  // run carrying both styles, with inline_code on the leading/trailing parts
+  // that have no inner bold.
+  assert.deepEqual(parseInlineBold("set `key=**v**` here"), [
+    { text_run: { content: "set ", text_element_style: {} } },
+    { text_run: { content: "key=", text_element_style: { inline_code: true } } },
+    {
+      text_run: {
+        content: "v",
+        text_element_style: { bold: true, inline_code: true },
+      },
+    },
+    { text_run: { content: " here", text_element_style: {} } },
+  ]);
+});
+
+test("parseInlineRich keeps an inline_code span and a ref link side by side", () => {
+  // Backticks and refs can share one string. The code run carries
+  // inline_code:true; the ref run carries the link URL; neither mixes.
+  const elements = parseInlineRich("call `do()` then [[ref:a|the next step]]", (id) =>
+    id === "a" ? "https://example.test/docx/D#H9" : undefined,
+  );
+  assert.deepEqual(elements, [
+    { text_run: { content: "call ", text_element_style: {} } },
+    { text_run: { content: "do()", text_element_style: { inline_code: true } } },
+    { text_run: { content: " then ", text_element_style: {} } },
+    {
+      text_run: {
+        content: "the next step",
+        text_element_style: { link: { url: "https://example.test/docx/D#H9" } },
+      },
+    },
+  ]);
+});
+
+test("parseInlineBold emits an unpaired backtick verbatim and coalesces neighbouring plain runs", () => {
+  // A single stray ` must survive as a literal character (the markdown
+  // importer keeps it too). All runs share the same default style so the
+  // coalescer must produce one run, not three.
+  assert.deepEqual(parseInlineBold("foo ` bar"), [
+    { text_run: { content: "foo ` bar", text_element_style: {} } },
+  ]);
+});
+
+test("parseInlineBold does not bleed inline_code into adjacent plain or bold runs", () => {
+  // After a `code` span closes, the trailing text must NOT inherit
+  // inline_code:true; the bold span after it must NOT carry inline_code
+  // either. This is the style-merge sanity check.
+  const elements = parseInlineBold("`a` plain **b** tail");
+  assert.deepEqual(elements, [
+    { text_run: { content: "a", text_element_style: { inline_code: true } } },
+    { text_run: { content: " plain ", text_element_style: {} } },
+    { text_run: { content: "b", text_element_style: { bold: true } } },
+    { text_run: { content: " tail", text_element_style: {} } },
+  ]);
+});
