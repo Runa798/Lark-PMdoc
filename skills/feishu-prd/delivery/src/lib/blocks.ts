@@ -3,6 +3,7 @@ import { basename, dirname } from "node:path";
 import { assertMediaFile, assertWithinWorkspace } from "./guard.ts";
 import { LarkError, larkApi, runLark } from "./lark.ts";
 import type { CalloutSpec, GridSpec, ImageSpec } from "./manifest.ts";
+import { withRetry } from "./retry.ts";
 
 export type DocxBlockBody = Record<string, unknown>;
 
@@ -309,17 +310,21 @@ async function uploadDocxImage(docId: string, imageBlockId: string, absPath: str
     size: String(st.size),
     extra: JSON.stringify({ drive_route_token: docId }),
   };
-  const res = await runLark(
-    [
-      "api",
-      "POST",
-      "/open-apis/drive/v1/medias/upload_all",
-      "--data",
-      JSON.stringify(data),
-      "--file",
-      `file=${basename(absPath)}`,
-    ],
-    { cwd: dirname(absPath) },
+  const res = await withRetry(
+    () =>
+      runLark(
+        [
+          "api",
+          "POST",
+          "/open-apis/drive/v1/medias/upload_all",
+          "--data",
+          JSON.stringify(data),
+          "--file",
+          `file=${basename(absPath)}`,
+        ],
+        { cwd: dirname(absPath) },
+      ),
+    { retries: 4, baseMs: 2000, maxMs: 15000 },
   );
   return fileTokenFromUpload(apiEnvelopeData(res, "media upload"));
 }

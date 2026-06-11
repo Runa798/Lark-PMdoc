@@ -34,7 +34,7 @@ export class LarkError extends Error {
 // Transient signals worth retrying (mostly the hosted-MCP path dropping connections).
 const RETRYABLE_TEXT =
   /EOF|transport failed|timeout|i\/o timeout|connection (reset|refused)|TLS handshake|temporarily|EAI_AGAIN|ECONNRESET|ETIMEDOUT|\b50[234]\b/i;
-const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504, 99991400]);
+const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504, 1061001, 99991400]);
 // Freshly created docs sometimes return code 2200 with this exact message on the
 // first read because the user_access_token scope grant has not propagated to all
 // edge nodes yet (observed 1-2 min propagation window). The error clears on its
@@ -201,7 +201,7 @@ export async function runLark(args: readonly string[], opts: RunOptions = {}): P
   const { stdout, stderr, code } = await spawnLark(args, opts);
   if (code !== 0) {
     const detail = redactSensitive(stderr.trim() || stdout.trim());
-    throw new LarkError(`lark-cli exited ${code}: ${sanitizeArgs(args)}`, detail, textIsRetryable(detail));
+    throw new LarkError(`lark-cli exited ${code}: ${sanitizeArgs(args)}`, detail, detailIsRetryable(detail));
   }
   return JSON.parse(extractJsonObject(stdout));
 }
