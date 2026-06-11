@@ -8,9 +8,14 @@
 
 import { numberHeadings, type Heading, type NumberedHeading } from "./numbering.ts";
 import type { PrdManifest, BlockSpec, TableSpec, ListSpec } from "./manifest.ts";
+import { stripRefs } from "./refs.ts";
 
+// Refs are stripped (replaced with their display text) BEFORE cell escaping so
+// the escape doesn't accidentally fire on the `|` inside the ref syntax. The
+// display text itself may legitimately contain `|`, which still needs escaping
+// — running stripRefs first guarantees that ordering.
 function escapeCell(c: string): string {
-  return c.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  return stripRefs(c).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 }
 
 function renderTable(t: TableSpec): string {
@@ -21,14 +26,17 @@ function renderTable(t: TableSpec): string {
 }
 
 function renderList(l: ListSpec): string {
-  return l.items.map((it, i) => (l.style === "ordered" ? `${i + 1}. ${it}` : `- ${it}`)).join("\n");
+  return l.items.map((it, i) => {
+    const text = stripRefs(it);
+    return l.style === "ordered" ? `${i + 1}. ${text}` : `- ${text}`;
+  }).join("\n");
 }
 
 /** Returns the markdown for a block, or null if it must be inserted post-create. */
 function renderBlock(b: BlockSpec): string | null {
   switch (b.kind) {
     case "paragraph":
-      return b.text;
+      return stripRefs(b.text);
     case "list":
       return renderList(b.list);
     case "table":

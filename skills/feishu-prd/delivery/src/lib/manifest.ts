@@ -69,6 +69,12 @@ export interface PrdSection {
   readonly title: string;
   /** stable anchor for incremental edits / media targeting. */
   readonly anchorKey: string;
+  /**
+   * Stable identifier for in-document cross-references. When set, other
+   * sections may link here from inline text using `[[ref:anchorId|display]]`.
+   * Must be unique across the manifest when present.
+   */
+  readonly anchorId?: string;
   readonly blocks: readonly BlockSpec[];
 }
 
