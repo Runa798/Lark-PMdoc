@@ -18,6 +18,20 @@
 import { spawn } from "node:child_process";
 import { withRetry } from "./retry.ts";
 
+/**
+ * Concatenate child-process output chunks and decode once as UTF-8.
+ *
+ * Decoding each chunk independently (`buf.toString()` per `data` event) breaks
+ * multi-byte UTF-8 codepoints that happen to straddle a chunk boundary: each
+ * half decodes to U+FFFD. This is silent — replacement chars don't break JSON
+ * structure but corrupt string contents — and triggers on large CJK responses
+ * where chunk boundaries land mid-character. Buffering and decoding once is
+ * the simplest correct fix.
+ */
+export function concatChunks(chunks: readonly Buffer[]): string {
+  return Buffer.concat(chunks as Buffer[]).toString("utf8");
+}
+
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 export class LarkError extends Error {
@@ -132,8 +146,8 @@ interface RawResult {
 function spawnLark(args: readonly string[], opts: RunOptions): Promise<RawResult> {
   return new Promise((resolve, reject) => {
     const child = spawn("lark-cli", [...args], { cwd: opts.cwd });
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     let settled = false;
     let timedOut = false;
     let killTimer: NodeJS.Timeout | undefined;
@@ -147,8 +161,10 @@ function spawnLark(args: readonly string[], opts: RunOptions): Promise<RawResult
       clearTimeout(timeout);
       if (killTimer !== undefined) clearTimeout(killTimer);
     };
-    child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
-    child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+    // Buffer raw chunks and decode once on close so that multi-byte UTF-8
+    // characters straddling a chunk boundary don't get mangled into U+FFFD.
+    child.stdout.on("data", (d: Buffer) => stdoutChunks.push(d));
+    child.stderr.on("data", (d: Buffer) => stderrChunks.push(d));
     child.on("error", (e: Error) => {
       if (settled) return;
       settled = true;
@@ -159,6 +175,8 @@ function spawnLark(args: readonly string[], opts: RunOptions): Promise<RawResult
       if (settled) return;
       settled = true;
       clearTimers();
+      const stdout = concatChunks(stdoutChunks);
+      const stderr = concatChunks(stderrChunks);
       if (timedOut) {
         const detail = redactSensitive(stderr.trim() || stdout.trim());
         reject(new LarkError(`lark-cli timed out after ${timeoutMs}ms: ${sanitizeArgs(args)}`, detail, false));
