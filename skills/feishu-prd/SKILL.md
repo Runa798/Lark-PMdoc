@@ -42,7 +42,7 @@ description: >-
 4. **跨模型自批（CoVe）** —— 批判者**必须 ≠ 起草者**，6 题引证回答→改写。这是质量增量最大的一步。
 5. **拼接 + voice 统一 + 剥脚手架** —— 单一模型整篇收口，产出 **delivery manifest**。
 
-行文规范看 `content/writing-rules.md`（四块结构、差异式逐态、图代文、过程产物清零、黑白名单、文风双边界、字数预算、基线先行、字段表、埋点、图表决策等 17 节）；语气规格看 `content/voice-rubric.md`（七维风格 + 正负例 + 自检清单）。
+行文规范看 `content/writing-rules.md`（四块结构、差异式逐态、图代文、过程产物清零、黑白名单、文风双边界、字数预算、基线先行、字段表、埋点、图表决策、文档开头等 18 节）；语气规格看 `content/voice-rubric.md`（七维风格 + 正负例 + 自检清单）。
 
 **多章大型 PRD**（10+ 章、几十屏几百态）按 `content/pipeline.md` §6「规模化编排」走：共用简报（`templates/briefing-template.md` 填空）+ 逐章 spec（`templates/chapter-spec-template.md`）+ N 并行子任务 + 单一修复波。
 
@@ -86,7 +86,7 @@ feishu-prd/
   content/
     pipeline.md                五步写前管线 + 多模型路由 + CoVe + §6 规模化编排（多章并行生产线）
     voice-rubric.md            语气规格（七维 + 正负例 + 自检）
-    writing-rules.md           写法规范 17 节（四块 / 差异式逐态 / 清零 / 黑白名单 / 预算 / 基线先行…）
+    writing-rules.md           写法规范 18 节（四块 / 差异式逐态 / 清零 / 黑白名单 / 预算 / 基线先行 / 文档开头…）
   delivery/
     blocks-cheatsheet.md       落地速查（块类型 + 限流 + 交付 runbook + 坑表）
     src/                       TypeScript 引擎（manifest → 飞书 docx）
