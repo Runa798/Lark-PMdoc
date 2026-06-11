@@ -69,10 +69,12 @@ function makeRun(content: string, style: InlineStyle): TextRunElement {
   const elementStyle: { bold?: true; link?: LinkStyle } = {};
   if (style.bold) elementStyle.bold = true;
   if (style.linkUrl !== undefined) {
-    // Feishu's docx schema requires the URL to be percent-encoded inside the
-    // link object; encoding the whole URL is safe because we control the
-    // upstream format (docx ID is opaque + already URL-safe).
-    elementStyle.link = { url: encodeURIComponent(style.linkUrl) };
+    // The docx server stores the URL verbatim (PATCH update_text_elements does
+    // not percent-decode it on read), and the raw URL is the form verified to
+    // navigate when clicked — percent-encoding the whole URL is stored as-is
+    // and breaks in-document anchor jumps because the encoded form is treated
+    // as a relative path.
+    elementStyle.link = { url: style.linkUrl };
   }
   return {
     text_run: {
@@ -90,13 +92,9 @@ function pushRun(elements: TextRunElement[], content: string, style: InlineStyle
       bold: previous.text_run.text_element_style.bold === true,
       linkUrl: previous.text_run.text_element_style.link?.url,
     };
-    // Coalesce same-style adjacent runs. previousStyle.linkUrl is the encoded
-    // form (matches makeRun output), so the comparison is consistent.
-    const newStyleEncoded: InlineStyle = {
-      bold: style.bold,
-      linkUrl: style.linkUrl === undefined ? undefined : encodeURIComponent(style.linkUrl),
-    };
-    if (styleEquals(previousStyle, newStyleEncoded)) {
+    // Coalesce same-style adjacent runs. Both sides are raw URLs (makeRun
+    // stores the URL verbatim), so the comparison is consistent.
+    if (styleEquals(previousStyle, style)) {
       elements[elements.length - 1] = makeRun(`${previous.text_run.content}${content}`, style);
       return;
     }

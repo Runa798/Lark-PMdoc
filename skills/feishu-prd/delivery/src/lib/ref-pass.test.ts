@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { planSectionPatchesForTest } from "./ref-pass.ts";
 import type { PrdSection } from "./manifest.ts";
 
-const url = encodeURIComponent("https://example.test/docx/D#H100");
+const url = "https://example.test/docx/D#H100";
 const resolver = (id: string): string | undefined =>
   id === "target" ? "https://example.test/docx/D#H100" : undefined;
 
