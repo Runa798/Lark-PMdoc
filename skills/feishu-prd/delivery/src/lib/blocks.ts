@@ -3,6 +3,7 @@ import { basename, dirname } from "node:path";
 import { assertMediaFile, assertWithinWorkspace } from "./guard.ts";
 import { LarkError, larkApi, runLark } from "./lark.ts";
 import type { CalloutSpec, GridSpec, ImageSpec } from "./manifest.ts";
+import { parseInlineRefs } from "./refs.ts";
 import { withRetry } from "./retry.ts";
 
 export type DocxBlockBody = Record<string, unknown>;
@@ -11,16 +12,29 @@ type TemporaryBlockBody = DocxBlockBody & { readonly block_id: string };
 type RichTextKey = "text" | "bullet" | "ordered";
 type OrderedSequence = "1" | "auto";
 
-interface TextElementStyle {
-  readonly bold?: true;
+interface LinkStyle {
+  readonly url: string;
 }
 
-interface TextRunElement {
+interface TextElementStyle {
+  readonly bold?: true;
+  readonly link?: LinkStyle;
+}
+
+export interface TextRunElement {
   readonly text_run: {
     readonly content: string;
     readonly text_element_style: TextElementStyle;
   };
 }
+
+/**
+ * Resolves a manifest `[[ref:anchorId|...]]` to a clickable docx URL. Returning
+ * `undefined` means the ref cannot be resolved yet (e.g. during the markdown
+ * create pass when heading block_ids do not yet exist) — callers in that phase
+ * must use `parseInlineBold` so refs are degraded to plain text.
+ */
+export type RefResolver = (anchorId: string) => string | undefined;
 
 const DEFAULT_CALLOUT_BACKGROUND = 1;
 const DEFAULT_CALLOUT_BORDER = 4;
@@ -42,71 +56,142 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
-function textRun(content: string, bold: boolean): TextRunElement {
+interface InlineStyle {
+  readonly bold: boolean;
+  readonly linkUrl?: string;
+}
+
+function styleEquals(a: InlineStyle, b: InlineStyle): boolean {
+  return a.bold === b.bold && a.linkUrl === b.linkUrl;
+}
+
+function makeRun(content: string, style: InlineStyle): TextRunElement {
+  const elementStyle: { bold?: true; link?: LinkStyle } = {};
+  if (style.bold) elementStyle.bold = true;
+  if (style.linkUrl !== undefined) {
+    // Feishu's docx schema requires the URL to be percent-encoded inside the
+    // link object; encoding the whole URL is safe because we control the
+    // upstream format (docx ID is opaque + already URL-safe).
+    elementStyle.link = { url: encodeURIComponent(style.linkUrl) };
+  }
   return {
     text_run: {
       content,
-      text_element_style: bold ? { bold: true } : {},
+      text_element_style: elementStyle,
     },
   };
 }
 
-function pushInlineRun(elements: TextRunElement[], content: string, bold: boolean): void {
+function pushRun(elements: TextRunElement[], content: string, style: InlineStyle): void {
   if (content === "") return;
   const previous = elements[elements.length - 1];
-  if (previous !== undefined && (previous.text_run.text_element_style.bold === true) === bold) {
-    elements[elements.length - 1] = textRun(`${previous.text_run.content}${content}`, bold);
-    return;
+  if (previous !== undefined) {
+    const previousStyle: InlineStyle = {
+      bold: previous.text_run.text_element_style.bold === true,
+      linkUrl: previous.text_run.text_element_style.link?.url,
+    };
+    // Coalesce same-style adjacent runs. previousStyle.linkUrl is the encoded
+    // form (matches makeRun output), so the comparison is consistent.
+    const newStyleEncoded: InlineStyle = {
+      bold: style.bold,
+      linkUrl: style.linkUrl === undefined ? undefined : encodeURIComponent(style.linkUrl),
+    };
+    if (styleEquals(previousStyle, newStyleEncoded)) {
+      elements[elements.length - 1] = makeRun(`${previous.text_run.content}${content}`, style);
+      return;
+    }
   }
-  elements.push(textRun(content, bold));
+  elements.push(makeRun(content, style));
 }
 
-export function parseInlineBold(content: string): readonly TextRunElement[] {
-  if (!content.includes("**")) return [textRun(content, false)];
+/**
+ * Parse a single text segment that contains no `[[ref:...]]` syntax, emitting
+ * runs that respect `**bold**`. Empty input yields an empty run so callers
+ * always get at least one element (docx requires a non-empty elements array).
+ */
+function parseBoldInSegment(content: string, linkUrl: string | undefined, elements: TextRunElement[]): void {
+  if (!content.includes("**")) {
+    pushRun(elements, content, { bold: false, linkUrl });
+    return;
+  }
 
-  const elements: TextRunElement[] = [];
   let cursor = 0;
   while (cursor < content.length) {
     const open = content.indexOf("**", cursor);
     if (open === -1) {
-      pushInlineRun(elements, content.slice(cursor), false);
-      break;
+      pushRun(elements, content.slice(cursor), { bold: false, linkUrl });
+      return;
     }
 
     const close = content.indexOf("**", open + 2);
     if (close === -1) {
-      pushInlineRun(elements, content.slice(cursor), false);
-      break;
+      pushRun(elements, content.slice(cursor), { bold: false, linkUrl });
+      return;
     }
 
     if (close === open + 2) {
-      pushInlineRun(elements, content.slice(cursor, close + 2), false);
+      pushRun(elements, content.slice(cursor, close + 2), { bold: false, linkUrl });
       cursor = close + 2;
       continue;
     }
 
-    pushInlineRun(elements, content.slice(cursor, open), false);
-    pushInlineRun(elements, content.slice(open + 2, close), true);
+    pushRun(elements, content.slice(cursor, open), { bold: false, linkUrl });
+    pushRun(elements, content.slice(open + 2, close), { bold: true, linkUrl });
     cursor = close + 2;
   }
-
-  return elements.length > 0 ? elements : [textRun("", false)];
 }
 
-function textBlock(blockId: string, content: string): TemporaryBlockBody {
+/**
+ * Parse manifest inline text — `**bold**` + `[[ref:anchorId|display]]` — into
+ * docx text_run elements. `resolveRef` returns a clickable URL for an anchorId
+ * or `undefined` if the ref is unknown; unresolved refs are rendered as plain
+ * (display) text so the caller can decide how to surface the failure.
+ *
+ * Bold styling INSIDE a ref display segment is preserved (a run can be both
+ * bold and linked); bold styling does not cross ref boundaries (the ref text
+ * is its own segment).
+ */
+export function parseInlineRich(content: string, resolveRef: RefResolver): readonly TextRunElement[] {
+  const elements: TextRunElement[] = [];
+  for (const segment of parseInlineRefs(content)) {
+    const linkUrl = segment.kind === "ref" ? resolveRef(segment.anchorId) : undefined;
+    parseBoldInSegment(segment.text, linkUrl, elements);
+  }
+  return elements.length > 0 ? elements : [makeRun("", { bold: false })];
+}
+
+/**
+ * Backward-compatible bold-only parser. Refs in the content are stripped to
+ * their plain display text (used during the markdown create pass before
+ * heading block_ids are known).
+ */
+export function parseInlineBold(content: string): readonly TextRunElement[] {
+  return parseInlineRich(content, () => undefined);
+}
+
+/** Apply a fully-rendered elements array to a block via update_text_elements. */
+export async function patchBlockTextElements(
+  docId: string,
+  blockId: string,
+  elements: readonly TextRunElement[],
+): Promise<void> {
+  await withRetry(() =>
+    larkApi({
+      method: "PATCH",
+      path: `/open-apis/docx/v1/documents/${docId}/blocks/${blockId}`,
+      data: { update_text_elements: { elements: [...elements] } },
+    }),
+  );
+}
+
+function textBlock(blockId: string, content: string, resolveRef?: RefResolver): TemporaryBlockBody {
+  const elements = resolveRef === undefined
+    ? [{ text_run: { content, text_element_style: {} as TextElementStyle } }]
+    : [...parseInlineRich(content, resolveRef)];
   return {
     block_id: blockId,
     block_type: 2,
-    text: {
-      elements: [
-        {
-          text_run: {
-            content,
-            text_element_style: {},
-          },
-        },
-      ],
-    },
+    text: { elements },
   };
 }
 
@@ -156,16 +241,18 @@ function gridWidthRatios(spec: GridSpec): readonly [number, number] {
   return spec.widthRatios ?? DEFAULT_GRID_WIDTH_RATIOS;
 }
 
-function gridRightBlocks(spec: GridSpec): readonly TemporaryBlockBody[] {
+function gridRightBlocks(spec: GridSpec, resolveRef: RefResolver): readonly TemporaryBlockBody[] {
   if (spec.blocks === undefined) {
-    return gridParagraphs(spec).map((paragraph, i) => textBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_text_${i}`, paragraph));
+    return gridParagraphs(spec).map((paragraph, i) =>
+      richTextBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_text_${i}`, "text", parseInlineRich(paragraph, resolveRef)),
+    );
   }
 
   const blocks: TemporaryBlockBody[] = [];
   let n = 0;
   for (const block of spec.blocks) {
     if (block.kind === "paragraph") {
-      blocks.push(richTextBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_block_${n}`, "text", parseInlineBold(block.text)));
+      blocks.push(richTextBlock(`${TEMP_GRID_RIGHT_COLUMN_ID}_block_${n}`, "text", parseInlineRich(block.text, resolveRef)));
       n += 1;
       continue;
     }
@@ -173,9 +260,9 @@ function gridRightBlocks(spec: GridSpec): readonly TemporaryBlockBody[] {
     block.items.forEach((item, i) => {
       const blockId = `${TEMP_GRID_RIGHT_COLUMN_ID}_block_${n}`;
       if (block.style === "ordered") {
-        blocks.push(richTextBlock(blockId, "ordered", parseInlineBold(item), i === 0 ? "1" : "auto"));
+        blocks.push(richTextBlock(blockId, "ordered", parseInlineRich(item, resolveRef), i === 0 ? "1" : "auto"));
       } else {
-        blocks.push(richTextBlock(blockId, "bullet", parseInlineBold(item)));
+        blocks.push(richTextBlock(blockId, "bullet", parseInlineRich(item, resolveRef)));
       }
       n += 1;
     });
@@ -183,7 +270,7 @@ function gridRightBlocks(spec: GridSpec): readonly TemporaryBlockBody[] {
   return blocks;
 }
 
-export function buildCalloutChildren(spec: CalloutSpec): readonly DocxBlockBody[] {
+export function buildCalloutChildren(spec: CalloutSpec, resolveRef?: RefResolver): readonly DocxBlockBody[] {
   const lines = calloutLines(spec);
   const textIds = lines.map((_line, i) => `${TEMP_CALLOUT_ID}_text_${i}`);
   const callout: Record<string, unknown> = {
@@ -235,13 +322,13 @@ export function buildCalloutChildren(spec: CalloutSpec): readonly DocxBlockBody[
       callout,
       children: textIds,
     },
-    ...lines.map((line, i) => textBlock(textIds[i]!, line)),
+    ...lines.map((line, i) => textBlock(textIds[i]!, line, resolveRef)),
   ];
 }
 
-export function buildGridDescendants(spec: GridSpec): readonly DocxBlockBody[] {
+export function buildGridDescendants(spec: GridSpec, resolveRef?: RefResolver): readonly DocxBlockBody[] {
   const [leftRatio, rightRatio] = gridWidthRatios(spec);
-  const rightBlocks = gridRightBlocks(spec);
+  const rightBlocks = gridRightBlocks(spec, resolveRef ?? (() => undefined));
   const rightBlockIds = rightBlocks.map((block) => block.block_id);
   return [
     {
@@ -359,14 +446,20 @@ async function replaceImage(docId: string, imageBlockId: string, fileToken: stri
   });
 }
 
-export async function insertCallout(docId: string, parentId: string, index: number, spec: CalloutSpec): Promise<string> {
+export async function insertCallout(
+  docId: string,
+  parentId: string,
+  index: number,
+  spec: CalloutSpec,
+  resolveRef?: RefResolver,
+): Promise<string> {
   const data = await larkApi({
     method: "POST",
     path: `/open-apis/docx/v1/documents/${docId}/blocks/${parentId}/descendant`,
     data: {
       index,
       children_id: [TEMP_CALLOUT_ID],
-      descendants: buildCalloutChildren(spec),
+      descendants: buildCalloutChildren(spec, resolveRef),
     },
   });
   return blockIdForTemporary(data, TEMP_CALLOUT_ID);
@@ -390,6 +483,7 @@ export async function insertGridLeftImageRightText(
   index: number,
   spec: GridSpec,
   workspaceRoot: string,
+  resolveRef?: RefResolver,
 ): Promise<InsertGridResult> {
   const abs = assertWithinWorkspace(spec.image.path, workspaceRoot);
   assertMediaFile(abs, { kind: "image" });
@@ -399,7 +493,7 @@ export async function insertGridLeftImageRightText(
     data: {
       index,
       children_id: [TEMP_GRID_ID],
-      descendants: buildGridDescendants(spec),
+      descendants: buildGridDescendants(spec, resolveRef),
     },
   });
   const gridId = blockIdForTemporary(data, TEMP_GRID_ID);
