@@ -58,6 +58,10 @@ async function main() {
   console.log(`\n=== DELIVERY COMPLETE (${elapsed}s) ===`);
   console.log(`doc_id:  ${result.doc_id}`);
   console.log(`doc_url: ${result.doc_url}`);
+  if (result.refStats) {
+    const { totalRefs, resolvedRefs, patchedBlocks } = result.refStats;
+    console.log(`refs:    ${resolvedRefs}/${totalRefs} resolved, ${patchedBlocks} block(s) patched`);
+  }
 }
 
 main().catch((e) => {

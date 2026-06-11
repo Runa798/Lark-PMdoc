@@ -1,4 +1,5 @@
 import type { BlockSpec, PrdManifest, TableSpec } from "./manifest.ts";
+import { collectRefAnchorIds, hasRef } from "./refs.ts";
 
 const PREAMBLE_ALLOWED_KINDS: ReadonlySet<BlockSpec["kind"]> = new Set(["paragraph", "list", "table"]);
 
@@ -174,5 +175,116 @@ export function validateManifest(m: PrdManifest): void {
     });
   });
 
+  validateAnchorsAndRefs(m, issues);
+
   if (issues.length > 0) throw new ManifestValidationError(issues);
+}
+
+const REF_FORBIDDEN_KINDS: ReadonlySet<BlockSpec["kind"]> = new Set(["image", "mermaid"]);
+
+function reportRefsIn(text: string, label: string, issues: string[]): void {
+  if (!hasRef(text)) return;
+  issues.push(`${label} contains [[ref:...]] in an unsupported position (image / mermaid caption do not support inline links)`);
+}
+
+function collectKnownAnchorIds(m: PrdManifest, issues: string[]): Set<string> {
+  const known = new Set<string>();
+  m.sections.forEach((s, si) => {
+    if (s.anchorId === undefined) return;
+    const id = s.anchorId.trim();
+    if (id === "") {
+      issues.push(`section[${si}] anchorId must not be empty when present`);
+      return;
+    }
+    if (known.has(id)) {
+      issues.push(`section[${si}] anchorId "${id}" is duplicated; anchorIds must be unique`);
+      return;
+    }
+    known.add(id);
+  });
+  return known;
+}
+
+function checkBlockRefs(
+  label: string,
+  block: BlockSpec,
+  known: ReadonlySet<string>,
+  issues: string[],
+): void {
+  if (block.kind === "image") {
+    if (block.image.caption !== undefined) reportRefsIn(block.image.caption, `${label}.image.caption`, issues);
+    return;
+  }
+  if (block.kind === "mermaid") {
+    if (block.caption !== undefined) reportRefsIn(block.caption, `${label}.mermaid.caption`, issues);
+    return;
+  }
+
+  const refs: { readonly path: string; readonly text: string }[] = [];
+  switch (block.kind) {
+    case "paragraph":
+      refs.push({ path: `${label}.text`, text: block.text });
+      break;
+    case "list":
+      block.list.items.forEach((item, i) => refs.push({ path: `${label}.list.items[${i}]`, text: item }));
+      break;
+    case "table":
+      block.table.header.forEach((cell, i) => refs.push({ path: `${label}.table.header[${i}]`, text: cell }));
+      block.table.rows.forEach((row, ri) =>
+        row.forEach((cell, ci) => refs.push({ path: `${label}.table.rows[${ri}][${ci}]`, text: cell })),
+      );
+      break;
+    case "callout": {
+      const lines =
+        block.callout.lines ??
+        (block.callout.text !== undefined ? block.callout.text.split(/\r?\n/) : []);
+      lines.forEach((line, i) => refs.push({ path: `${label}.callout.lines[${i}]`, text: line }));
+      break;
+    }
+    case "grid": {
+      if (block.grid.image.caption !== undefined) {
+        reportRefsIn(block.grid.image.caption, `${label}.grid.image.caption`, issues);
+      }
+      if (block.grid.blocks !== undefined) {
+        block.grid.blocks.forEach((rb, ri) => {
+          if (rb.kind === "paragraph") {
+            refs.push({ path: `${label}.grid.blocks[${ri}].text`, text: rb.text });
+          } else {
+            rb.items.forEach((item, ii) =>
+              refs.push({ path: `${label}.grid.blocks[${ri}].items[${ii}]`, text: item }),
+            );
+          }
+        });
+      } else {
+        const paragraphs =
+          block.grid.paragraphs ??
+          (block.grid.text !== undefined ? block.grid.text.split(/\r?\n/) : []);
+        paragraphs.forEach((p, i) => refs.push({ path: `${label}.grid.paragraphs[${i}]`, text: p }));
+      }
+      break;
+    }
+  }
+
+  for (const { path, text } of refs) {
+    for (const anchorId of collectRefAnchorIds(text)) {
+      if (!known.has(anchorId)) {
+        issues.push(`${path} references unknown anchorId "${anchorId}"`);
+      }
+    }
+  }
+}
+
+function validateAnchorsAndRefs(m: PrdManifest, issues: string[]): void {
+  const known = collectKnownAnchorIds(m, issues);
+  if (m.preamble !== undefined) {
+    m.preamble.forEach((b, bi) => {
+      if (REF_FORBIDDEN_KINDS.has(b.kind)) return;
+      checkBlockRefs(`preamble.blocks[${bi}]`, b, known, issues);
+    });
+  }
+  m.sections.forEach((s, si) => {
+    s.blocks.forEach((b, bi) => {
+      checkBlockRefs(`section[${si}].blocks[${bi}]`, b, known, issues);
+    });
+  });
 }

@@ -15,9 +15,11 @@ import {
   insertCallout,
   insertGridLeftImageRightText,
   setTableColumnWidths,
+  type RefResolver,
 } from "./lib/blocks.ts";
 import type { PrdManifest, ImageSpec, PrdSection } from "./lib/manifest.ts";
 import { validateManifest } from "./lib/validate.ts";
+import { applyManifestRefs, buildAnchorUrlMapForDoc, buildRefResolver, type RefStats } from "./lib/ref-pass.ts";
 
 export interface BuildOptions {
   readonly manifest: PrdManifest;
@@ -31,6 +33,11 @@ export interface BuildOptions {
 export interface BuildResult {
   readonly doc_id: string;
   readonly doc_url: string;
+  /**
+   * Cross-reference resolution report. Always present after a successful
+   * build; when the manifest contains no refs all counters are zero.
+   */
+  readonly refStats?: RefStats;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -313,6 +320,7 @@ async function applyPathBSectionBlocks(
   anchorText: string,
   section: PrdSection,
   workspaceRoot: string,
+  resolveRef: RefResolver,
 ): Promise<void> {
   if (!needsPathBProcessing(section)) return;
 
@@ -324,9 +332,9 @@ async function applyPathBSectionBlocks(
     const headingIndex = requireHeadingIndex(children, headingId, anchorText);
     const index = headingIndex + 1 + insertedPathBBlocks;
     if (block.kind === "callout") {
-      await insertCallout(docId, docId, index, block.callout);
+      await insertCallout(docId, docId, index, block.callout, resolveRef);
     } else {
-      await insertGridLeftImageRightText(docId, docId, index, block.grid, workspaceRoot);
+      await insertGridLeftImageRightText(docId, docId, index, block.grid, workspaceRoot, resolveRef);
     }
     insertedPathBBlocks += 1;
   }
@@ -394,16 +402,33 @@ export async function buildPrd(opts: BuildOptions): Promise<BuildResult> {
   }
   if (warmupError !== undefined) throw warmupError;
 
+  // Build the anchorId -> URL map up front so path-B insertion can bake in
+  // links at write time (no separate PATCH round-trip for callout / grid).
+  const numberedTitles = numbered.map((n) => n.numbered);
+  const anchorUrlMap = await buildAnchorUrlMapForDoc(opts.manifest, created, numberedTitles);
+  const { resolver: pathBResolver, getResolvedCount: getPathBResolvedCount } = buildRefResolver(anchorUrlMap);
+
   for (let i = 0; i < opts.manifest.sections.length; i++) {
     const section = opts.manifest.sections[i]!;
-    const anchorText = numbered[i]!.numbered;
+    const anchorText = numberedTitles[i]!;
     for (const b of section.blocks) {
       if (b.kind === "image") {
         await insertImage(created.doc_id, anchorText, b.image, opts.workspaceRoot);
       }
     }
-    await applyPathBSectionBlocks(created.doc_id, anchorText, section, opts.workspaceRoot);
+    await applyPathBSectionBlocks(created.doc_id, anchorText, section, opts.workspaceRoot, pathBResolver);
   }
 
-  return created;
+  // Pass-2: rewrite path-A blocks (paragraph / list / table cell) that contain
+  // refs. Unresolved refs / missing target blocks raise — refs are
+  // content-significant; silent degradation would mislead reviewers.
+  const refStats = await applyManifestRefs({
+    manifest: opts.manifest,
+    built: created,
+    numberedTitles,
+    anchorUrlMap,
+    pathBResolvedCount: getPathBResolvedCount(),
+  });
+
+  return { ...created, refStats };
 }

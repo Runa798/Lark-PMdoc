@@ -170,6 +170,81 @@ test("validateManifest rejects grid blocks in preamble", () => {
   );
 });
 
+test("validateManifest rejects refs that point to an unknown anchorId", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          ...validManifest.sections[0]!,
+          blocks: [{ kind: "paragraph", text: "see [[ref:missing|here]]" }],
+        },
+      ],
+    },
+    /references unknown anchorId "missing"/,
+  );
+});
+
+test("validateManifest accepts refs whose anchorId matches a section anchorId", () => {
+  const manifest: PrdManifest = {
+    title: "Doc",
+    sections: [
+      {
+        level: 1,
+        title: "Chapter A",
+        anchorKey: "a",
+        anchorId: "chap-a",
+        blocks: [{ kind: "paragraph", text: "see [[ref:chap-a|here]]" }],
+      },
+    ],
+  };
+  assert.doesNotThrow(() => validateManifest(manifest));
+});
+
+test("validateManifest rejects duplicate anchorIds across sections", () => {
+  const manifest: PrdManifest = {
+    title: "Doc",
+    sections: [
+      {
+        level: 1,
+        title: "A",
+        anchorKey: "a",
+        anchorId: "shared",
+        blocks: [{ kind: "paragraph", text: "x" }],
+      },
+      {
+        level: 1,
+        title: "B",
+        anchorKey: "b",
+        anchorId: "shared",
+        blocks: [{ kind: "paragraph", text: "y" }],
+      },
+    ],
+  };
+  expectInvalid(manifest, /anchorId "shared" is duplicated/);
+});
+
+test("validateManifest rejects refs that appear inside image captions", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          level: 1,
+          title: "Chapter",
+          anchorKey: "c",
+          anchorId: "c",
+          blocks: [
+            { kind: "paragraph", text: "intro" },
+            { kind: "image", image: { path: "a.png", caption: "see [[ref:c|here]]" } },
+          ],
+        },
+      ],
+    },
+    /image\.caption contains \[\[ref:\.\.\.\]\] in an unsupported position/,
+  );
+});
+
 test("validateManifest rejects grid list items with line breaks", () => {
   expectInvalid(
     {
