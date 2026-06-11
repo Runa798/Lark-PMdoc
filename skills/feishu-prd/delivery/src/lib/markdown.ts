@@ -51,6 +51,12 @@ export function renderManifestMarkdown(m: PrdManifest): RenderedManifest {
   const headings: Heading[] = m.sections.map((s) => ({ level: s.level, title: s.title }));
   const numbered = numberHeadings(headings);
   const parts: string[] = [];
+  if (m.preamble !== undefined) {
+    for (const b of m.preamble) {
+      const r = renderBlock(b);
+      if (r !== null && r.trim() !== "") parts.push(r);
+    }
+  }
   m.sections.forEach((s, i) => {
     const n = numbered[i]!;
     parts.push(`${"#".repeat(s.level)} ${n.numbered}`);

@@ -209,6 +209,12 @@ interface BlockLike {
 
 function assertNoUnsupportedBlocks(m: PrdManifest): void {
   const unsupported: string[] = [];
+  if (m.preamble !== undefined) {
+    for (const block of m.preamble as readonly BlockLike[]) {
+      const kind = typeof block.kind === "string" ? block.kind : "<unknown>";
+      if (!IMPLEMENTED_BLOCK_KINDS.has(kind)) unsupported.push(`preamble: ${kind}`);
+    }
+  }
   for (const section of m.sections) {
     for (const block of section.blocks as readonly BlockLike[]) {
       const kind = typeof block.kind === "string" ? block.kind : "<unknown>";

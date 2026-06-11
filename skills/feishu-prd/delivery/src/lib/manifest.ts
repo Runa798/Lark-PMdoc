@@ -74,5 +74,17 @@ export interface PrdSection {
 
 export interface PrdManifest {
   readonly title: string;
+  /**
+   * Document-level blocks rendered *before* the first section heading.
+   *
+   * Typical use: a 2-column info table (product/doc version, date, owner, status)
+   * that the reviewer expects at the very top of the document, with no heading
+   * of its own. Because preamble blocks have no heading anchor above them, the
+   * delivery engine can only emit them through the markdown create path —
+   * `validate.ts` restricts preamble to `paragraph` / `list` / `table`. Media
+   * and callouts (which need a heading anchor for precise post-create insertion)
+   * are not allowed here; put them in a section instead.
+   */
+  readonly preamble?: readonly BlockSpec[];
   readonly sections: readonly PrdSection[];
 }

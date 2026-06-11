@@ -1,4 +1,6 @@
-import type { PrdManifest } from "./manifest.ts";
+import type { BlockSpec, PrdManifest, TableSpec } from "./manifest.ts";
+
+const PREAMBLE_ALLOWED_KINDS: ReadonlySet<BlockSpec["kind"]> = new Set(["paragraph", "list", "table"]);
 
 const GRID_STATIC_DESCENDANT_COUNT = 4;
 const GRID_DESCENDANT_LIMIT = 1000;
@@ -17,9 +19,41 @@ function containsLineBreak(text: string): boolean {
   return /\r|\n/.test(text);
 }
 
+function validateTableBlock(blockLabel: string, table: TableSpec, issues: string[]): void {
+  if (table.columnWidths !== undefined) {
+    if (table.columnWidths.length !== table.header.length) {
+      issues.push(`${blockLabel}.table.columnWidths has ${table.columnWidths.length} columns but header has ${table.header.length}`);
+    }
+    table.columnWidths.forEach((width, wi) => {
+      if (!Number.isFinite(width) || width <= 0) issues.push(`${blockLabel}.table.columnWidths[${wi}] must be a positive number`);
+    });
+  }
+  table.rows.forEach((row, ri) => {
+    if (row.length !== table.header.length) {
+      issues.push(`${blockLabel}.rows[${ri}] has ${row.length} columns but header has ${table.header.length}`);
+    }
+  });
+}
+
 export function validateManifest(m: PrdManifest): void {
   const issues: string[] = [];
   if (m.title.trim() === "") issues.push("document title must not be empty");
+
+  if (m.preamble !== undefined) {
+    m.preamble.forEach((b, bi) => {
+      const blockLabel = `preamble.blocks[${bi}]`;
+      const kind: unknown = (b as { kind?: unknown }).kind;
+      if (typeof kind !== "string" || !PREAMBLE_ALLOWED_KINDS.has(kind as BlockSpec["kind"])) {
+        issues.push(
+          `${blockLabel} kind "${String(kind)}" is not allowed in preamble — only paragraph / list / table are renderable before the first heading (preamble has no heading anchor for post-create insertion)`,
+        );
+        return;
+      }
+      if (b.kind === "table") {
+        validateTableBlock(blockLabel, b.table, issues);
+      }
+    });
+  }
 
   // Heading hierarchy: no section may jump more than 1 level deeper than the previous section
   // (e.g. H4 must not appear before H3 — engine hard constraint "H4 出现前必须先有 H3" FATAL)

@@ -152,6 +152,24 @@ test("validateManifest rejects heading level jump (L1 -> L3 skipping L2)", () =>
   expectInvalid(manifest, /heading level jump.*L1 -> L3/);
 });
 
+test("validateManifest rejects grid blocks in preamble", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      preamble: [
+        {
+          kind: "grid",
+          grid: {
+            image: { path: "a.png" },
+            blocks: [{ kind: "paragraph", text: "right" }],
+          },
+        },
+      ],
+    },
+    /preamble\.blocks\[0\] kind "grid" is not allowed in preamble/,
+  );
+});
+
 test("validateManifest rejects grid list items with line breaks", () => {
   expectInvalid(
     {
