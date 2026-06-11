@@ -369,6 +369,25 @@ export async function buildPrd(opts: BuildOptions): Promise<BuildResult> {
   const { markdown, numbered } = renderManifestMarkdown(opts.manifest);
   const created = await createResilient(opts.manifest.title, markdown, opts.folderToken);
 
+  // Warm-up gate: freshly created docs sometimes return code 2200
+  // ("check incr user_access_token scope fail") on the first GET blocks call
+  // because the read permission grant has not propagated yet (observed 1-2 min).
+  // Poll up to 2 minutes before entering the precise-update loop; otherwise the
+  // first section update would otherwise fail with a transient permission error
+  // even though the doc is fine.
+  let warmupError: unknown;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    try {
+      await getTopLevelChildren(created.doc_id);
+      warmupError = undefined;
+      break;
+    } catch (e) {
+      warmupError = e;
+      await sleep(5_000);
+    }
+  }
+  if (warmupError !== undefined) throw warmupError;
+
   for (let i = 0; i < opts.manifest.sections.length; i++) {
     const section = opts.manifest.sections[i]!;
     const anchorText = numbered[i]!.numbered;

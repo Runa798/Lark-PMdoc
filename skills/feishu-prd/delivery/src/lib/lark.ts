@@ -35,9 +35,16 @@ export class LarkError extends Error {
 const RETRYABLE_TEXT =
   /EOF|transport failed|timeout|i\/o timeout|connection (reset|refused)|TLS handshake|temporarily|EAI_AGAIN|ECONNRESET|ETIMEDOUT|\b50[234]\b/i;
 const RETRYABLE_CODES = new Set([429, 500, 502, 503, 504, 99991400]);
+// Freshly created docs sometimes return code 2200 with this exact message on the
+// first read because the user_access_token scope grant has not propagated to all
+// edge nodes yet (observed 1-2 min propagation window). The error clears on its
+// own. We match by message substring rather than adding 2200 to RETRYABLE_CODES
+// because 2200 can also mean a real permission/scope error that must surface.
+const RETRYABLE_SCOPE_LAG_MESSAGE = "check incr user_access_token scope";
 
 function textIsRetryable(detail: unknown): boolean {
-  return typeof detail === "string" && RETRYABLE_TEXT.test(detail);
+  if (typeof detail !== "string") return false;
+  return RETRYABLE_TEXT.test(detail) || detail.includes(RETRYABLE_SCOPE_LAG_MESSAGE);
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
