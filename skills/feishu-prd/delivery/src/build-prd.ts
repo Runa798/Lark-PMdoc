@@ -411,7 +411,11 @@ export async function buildPrd(opts: BuildOptions): Promise<BuildResult> {
   for (let i = 0; i < opts.manifest.sections.length; i++) {
     const section = opts.manifest.sections[i]!;
     const anchorText = numberedTitles[i]!;
-    for (const b of section.blocks) {
+    // media-insert anchors at the section heading, so repeated inserts on the
+    // same anchor stack LIFO; iterate in reverse to keep declared image order.
+    const sectionImages = section.blocks.filter((b) => b.kind === "image");
+    for (let j = sectionImages.length - 1; j >= 0; j--) {
+      const b = sectionImages[j]!;
       if (b.kind === "image") {
         await insertImage(created.doc_id, anchorText, b.image, opts.workspaceRoot);
       }
