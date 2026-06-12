@@ -48,6 +48,8 @@ description: >-
 
 **标题不要自己编号**——编号由交付层确定性生成（H1 一/二/三、H2 全文连续 1./2./3.）。
 
+**文档内引用挂内链**——正文提到本文档内的屏 / 章节时写 `[[ref:anchorId|显示文本]]`（anchorId = 目标 section 的 `anchorId` 字段），交付层自动转飞书锚点链接。跨章引用用「章名 / 节名」+ 内链，不写「第 N 章」硬编号（编号是交付层生成的，写作期引用必错位）。页面跳转描述一律挂内链，这是长期写作习惯；机制细节见 `delivery/blocks-cheatsheet.md`「内链」节。
+
 ### 第二步 · 交付层：把 manifest 落进飞书
 
 manifest 形状的权威定义在 `delivery/src/lib/manifest.ts`；填空模板见 `templates/prd-skeleton.json`（7 模块骨架）。
@@ -120,6 +122,7 @@ feishu-prd/
 - **create children ≤ 50 / 请求**；**markdown 锁 v1**；docx 表格 ≠ 多维表。
 - **网络**：交付层用 lark-cli 自己的应用凭据**直连飞书，无需任何代理**。内容层若调用外部模型，按你本机的环境自行接线——本 skill 不内置任何主机/代理细节。
 - **账号断言**：`buildPrd` 按 `expectedOpenId` 校验当前 lark-cli 账号（按 open_id，不看显示名）。
+- 所有 `[[ref:]]` 必须可解析；任何未解析 ref = 构建 FAIL（不静默降级）。
 
 ## 来源
 
