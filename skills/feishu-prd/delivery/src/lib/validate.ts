@@ -187,6 +187,26 @@ function reportRefsIn(text: string, label: string, issues: string[]): void {
   issues.push(`${label} contains [[ref:...]] in an unsupported position (image / mermaid caption do not support inline links)`);
 }
 
+// The Feishu markdown importer only converts ** to a bold style when the span
+// is plain text; with a [[ref:]] inside, the asterisks land in the document as
+// literal characters and the ref pass can no longer locate the block. Must be
+// a non-greedy per-span match: a [^*]*-style scan would pair asterisks across
+// neighbouring bold spans and flag clean text in between.
+const BOLD_SPAN_PATTERN = /\*\*(.+?)\*\*/g;
+
+function reportBoldNestedRefs(text: string, path: string, issues: string[]): void {
+  if (!hasRef(text)) return;
+  BOLD_SPAN_PATTERN.lastIndex = 0;
+  for (let m = BOLD_SPAN_PATTERN.exec(text); m !== null; m = BOLD_SPAN_PATTERN.exec(text)) {
+    if (m[1]!.includes("[[ref:")) {
+      issues.push(
+        `${path} nests [[ref:...]] inside a **bold** span; the importer keeps the asterisks as literal text and the ref pass cannot locate the block — move the ref outside the bold marks`,
+      );
+      return;
+    }
+  }
+}
+
 function collectKnownAnchorIds(m: PrdManifest, issues: string[]): Set<string> {
   const known = new Set<string>();
   m.sections.forEach((s, si) => {
@@ -266,6 +286,7 @@ function checkBlockRefs(
   }
 
   for (const { path, text } of refs) {
+    reportBoldNestedRefs(text, path, issues);
     for (const anchorId of collectRefAnchorIds(text)) {
       if (!known.has(anchorId)) {
         issues.push(`${path} references unknown anchorId "${anchorId}"`);

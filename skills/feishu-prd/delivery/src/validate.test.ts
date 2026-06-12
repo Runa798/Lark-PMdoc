@@ -245,6 +245,41 @@ test("validateManifest rejects refs that appear inside image captions", () => {
   );
 });
 
+test("validateManifest rejects refs nested inside bold spans", () => {
+  expectInvalid(
+    {
+      ...validManifest,
+      sections: [
+        {
+          level: 1,
+          title: "Chapter",
+          anchorKey: "c",
+          anchorId: "c",
+          blocks: [{ kind: "paragraph", text: "see **[[ref:c|here]]** for details" }],
+        },
+      ],
+    },
+    /nests \[\[ref:\.\.\.\]\] inside a \*\*bold\*\* span/,
+  );
+});
+
+test("validateManifest accepts bold spans and refs side by side", () => {
+  assert.doesNotThrow(() =>
+    validateManifest({
+      ...validManifest,
+      sections: [
+        {
+          level: 1,
+          title: "Chapter",
+          anchorKey: "c",
+          anchorId: "c",
+          blocks: [{ kind: "paragraph", text: "**lead**: see [[ref:c|here]], also **tail**" }],
+        },
+      ],
+    }),
+  );
+});
+
 test("validateManifest rejects grid list items with line breaks", () => {
   expectInvalid(
     {
